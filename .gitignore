@@ -1,0 +1,26 @@
+﻿# OS
+Thumbs.db
+.DS_Store
+
+# Editors
+*.swp
+*.tmp
+
+# e2 studio workspace
+.metadata/
+
+# Build outputs
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Logs
+*.log

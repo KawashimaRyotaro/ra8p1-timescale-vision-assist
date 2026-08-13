@@ -1,130 +1,43 @@
-# Project Context
+# プロジェクトの目的
 
-## Project name
+## 最終目標
 
-Time-Scale-Adaptive Vision System for Walking Assistance
+Renesas EK-RA8P1上で、緊急度によって処理時間を使い分ける歩行支援用
+エッジAI（Artificial Intelligence：人工知能）システムを構築します。
 
-Japanese title:
+## 学習目標
 
-時間スケール適応型視覚認識による歩行支援システム
+完成品だけでなく、次の能力を身につけることを重視します。
 
-## Contest
+- 組込みC/C++による実装
+- カメラ、メモリ、表示回路、割込みの理解
+- 実機上の問題切り分け
+- リアルタイム処理の設計
+- エッジAIシステム全体の設計
 
-TRON Programming Contest 2026
+## 対象環境
 
-Target platform:
-- Renesas EK-RA8P1
-- μT-Kernel 3.0 BSP2
+- ボード：Renesas EK-RA8P1
+- 基本ソフトウェア：μT-Kernel 3.0 BSP2（Board Support Package：ボード用基本ソフトウェア）
+- 開発環境：e2 studio 2026-04.2
+- FSP（Flexible Software Package）：周辺回路の設定と制御コードを生成するRenesasの仕組み、バージョン6.5.0
 
-## Problem definition
+## 開発の二つの流れ
 
-Visual information does not always require the same processing latency
-or the same recognition detail.
+### 統合開発
 
-Objects or events associated with short time-to-collision require a
-fast response, while lower-urgency objects can use more computationally
-expensive recognition.
+コンテスト提出用システムを作る作業です。確認済みの機能だけを取り込み、
+常に復旧できる状態を保ちます。
 
-Processing all visual information using one large recognition pipeline
-creates an avoidable trade-off between latency and recognition detail.
+### 独立評価
 
-## Proposed principle
+一つの技術的な疑問を検証する作業です。評価ごとに別のe2 studio
+プロジェクトを作り、デフォルトプログラムへ影響させません。
 
-The system separates visual processing according to temporal urgency.
+評価結果によって、現在の設計や開発順序を変更できます。
 
-### Fast path
+## 安全境界
 
-Purpose:
-- detect urgent visual events;
-- determine dangerous direction;
-- minimize response latency.
-
-This path receives high RTOS priority.
-
-### Detailed path
-
-Purpose:
-- recognize lower-urgency objects in greater semantic detail;
-- provide environmental information to the user.
-
-This path receives lower RTOS priority.
-
-## Role of μT-Kernel
-
-μT-Kernel is not used only as a software framework.
-
-Its task priority mechanism is part of the proposed architecture.
-
-The central systems question is:
-
-Can the high-priority fast path retain bounded response latency while
-the lower-priority detailed recognition workload is executing?
-
-## Output concept
-
-Fast path:
-
-danger direction
--> guidance command
-
-Detailed path:
-
-object information
--> audio information
-
-GVS is planned as a possible guidance interface.
-
-Initial firmware validation will use a command abstraction or dummy
-electrical output rather than human stimulation.
-
-## Primary evaluation metrics
-
-- fast-path end-to-end latency
-- P95 latency
-- worst-case latency
-- deadline miss count
-- deadline miss rate
-- memory footprint
-- CPU/NPU utilization where measurable
-
-## Non-goals
-
-The primary contribution is not:
-
-- maximizing object-detection benchmark accuracy;
-- creating a new generic vision model;
-- modifying the μT-Kernel core;
-- demonstrating RA8P1 dual-core operation merely for complexity.
-
-AI accuracy matters only insofar as it supports the complete system.
-
-## Project goals
-
-This project has two primary goals.
-
-### Goal 1 — Learn edge AI systems through implementation
-
-The project is a practical learning environment for:
-
-- RA8P1 architecture;
-- Cortex-M85 / Cortex-M33;
-- Ethos-U55 NPU;
-- embedded AI deployment;
-- camera pipelines;
-- memory and DMA;
-- μT-Kernel;
-- real-time scheduling;
-- hardware/software co-design.
-
-Learning through experiments is a first-class project outcome.
-
-The architecture is therefore expected to evolve as understanding
-of the platform improves.
-
-### Goal 2 — Complete a strong TRON Programming Contest entry
-
-The project should ultimately converge into a reproducible,
-measurable, demonstrable application for TRON Programming Contest 2026.
-
-Contest completion must not prevent useful exploration,
-but exploration should eventually feed back into the final system.
+GVSはGalvanic Vestibular Stimulationの略で、電気前庭刺激を意味します。
+開発初期は論理コマンド、計測出力、またはダミー負荷だけを使用します。
+人体への刺激条件は、このリポジトリでは決めません。

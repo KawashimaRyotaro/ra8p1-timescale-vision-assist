@@ -1,64 +1,52 @@
-# Build and Flash
+# ビルドと実機書込み
 
-## Verified environment
+## 使用環境
 
-Target:
-- Renesas EK-RA8P1
+- ボード：Renesas EK-RA8P1
+- 開発環境：e2 studio 2026-04.2
+- FSP（Flexible Software Package）：周辺回路の設定と制御コードを生成する仕組み、バージョン6.5.0
+- 基本ソフトウェア：μT-Kernel 3.0 BSP2（Board Support Package：ボード用基本ソフトウェア）
+- デバッガ：SEGGER J-Link
 
-IDE:
-- e² studio 2026-04.2
+## プロジェクトの選択
 
-FSP:
-- Renesas FSP 6.5.0
+| 目的 | ディレクトリ | e2 studioプロジェクト名 |
+|---|---|---|
+| デフォルト確認 | `firmware/ra8p1/` | `mtk3bsp2_ra8p1_ek` |
+| カメラ表示評価 | `firmware/evaluations/camera_lcd/` | `mipi_csi_ek_ra8p1_ep` |
 
-RTOS:
-- μT-Kernel 3.0 BSP2
+カメラ表示評価中は必ず`mipi_csi_ek_ra8p1_ep`を選択します。
 
-Project directory:
+評価プロジェクトは用途に合う公式サンプル、またはe2 studioの新規プロジェクト
+作成機能から作ります。既存プロジェクトのメタデータを文字列置換して複製しません。
 
-`firmware/ra8p1/`
+## e2 studioへ読み込む
 
-## Build
+1. `File` → `Import...`を開く
+2. `General` → `Existing Projects into Workspace`を選ぶ
+3. `Select root directory`へ`firmware/evaluations/camera_lcd/`を指定する
+4. `mipi_csi_ek_ra8p1_ep`にチェックがあることを確認する
+5. `Copy projects into workspace`は無効のまま`Finish`を押す
 
-The authoritative embedded build is performed from e² studio.
+## 周辺回路設定を変更する
 
-General procedure:
+1. 対象評価プロジェクトの`configuration.xml`を開く
+2. FSP Configuratorで必要な項目だけを変更する
+3. Generate Project Contentを実行する
+4. `ra_cfg/`と`ra_gen/`の変更内容を確認する
+5. Applicationコードをビルドする
 
-1. Open the configured e² studio workspace.
-2. Select the EK-RA8P1 μT-Kernel project.
-3. Build Project.
-4. Confirm that the build completes without errors.
+生成ファイルを直接書き換えません。
 
-Do not infer build success from source inspection alone.
+## 実機確認
 
-## Hardware debugging
+1. `Project` → `Build Project`を実行する
+2. `0 errors`で終了することを確認する
+3. `Run` → `Debug Configurations...`を開く
+4. `Renesas GDB Hardware Debugging`内の`mipi_csi_ek_ra8p1_ep Debug_Flat`を選ぶ
+5. `Debug`を押し、書込みとデバッガ接続の完了を待つ
+6. `main`で停止したら`Resume`（F8）を押す
+7. 端末メニューで解像度`1`、続いてライブカメラ`1`を入力する
+8. LCD表示と端末ログを確認し、結果を`docs/EXPERIMENTS.md`へ記録する
 
-Debugger:
-- SEGGER J-Link
-
-General procedure:
-
-1. Connect EK-RA8P1 to the development PC.
-2. Start the Renesas GDB Hardware Debugging configuration.
-3. Flash the current firmware.
-4. Run or debug the application.
-5. Confirm expected execution on hardware.
-
-## Verification rule
-
-A change is not considered hardware-verified until the result has been
-observed on EK-RA8P1.
-
-Codex may:
-- modify source;
-- analyze build logs supplied by the user;
-- propose fixes;
-- create host-side tests.
-
-Codex may not assume that:
-- e² studio generated successfully;
-- firmware built successfully;
-- flashing succeeded;
-- hardware behavior is correct
-
-unless those results have been explicitly verified.
+ソース確認だけでは、ビルド成功や実機動作済みとは扱いません。

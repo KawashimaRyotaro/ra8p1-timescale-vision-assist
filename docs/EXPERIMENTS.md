@@ -1,56 +1,104 @@
-# Experiments
+# 実験記録
 
-This document records exploratory work performed to understand
-RA8P1 and edge AI technologies.
+## 記録形式
 
-Experiments do not need to become part of the final application.
+各実験で次を残します。
 
----
+- 技術的な疑問
+- 仮説
+- 使用したボードとソフトウェア版
+- 変更したプロジェクト
+- 確認手順
+- 測定結果
+- 成功と失敗
+- 学んだこと
+- 設計への影響
 
-## E001 — μT-Kernel task priority behavior
+## E001 μT-Kernelのタスク優先順位
 
-Question:
-How strongly does task priority affect latency under CPU load?
+状態：計画中
 
-Status:
-Planned
+疑問：低い優先順位の高負荷処理中でも、緊急処理の応答時間を守れるか。
 
-Result:
-TBD
+## E002 Ethos-U55による最初の推論
 
-Impact on architecture:
-TBD
+状態：計画中
 
----
+Ethos-U55はRA8P1に搭載された、AI（Artificial Intelligence：人工知能）計算を
+支援する回路です。
 
-## E002 — Ethos-U55 first inference
+疑問：既知のモデルを実行するための最小構成は何か。
 
-Question:
-What is the minimum path required to execute an AI model
-on the RA8P1 Ethos-U55?
+## E003 OV5640から液晶までの画像経路
 
-Status:
-Planned
+状態：基本経路確認済み、画質評価中
 
-Result:
-TBD
+プロジェクト：`firmware/evaluations/camera_lcd/`
 
-Impact on architecture:
-TBD
+疑問：OV5640の画像が、どの回路とメモリを通って液晶へ表示されるか。
 
----
+使用する名称：
 
-## E003 — OV5640 first frame
+- MIPI CSI-2：カメラ画像を高速な直列信号で送る規格
+- VIN（Video Input）：画像入力回路
+- SDRAM（Synchronous Dynamic Random Access Memory）：外部大容量メモリ
+- GLCDC（Graphics Liquid Crystal Display Controller）：液晶表示回路
 
-Question:
-What is the actual acquisition path and memory representation
-for the supplied OV5640 camera?
+現在の仮説：
 
-Status:
-Planned
+```text
+OV5640 → MIPI CSI-2 → VIN → 外部SDRAM → GLCDC → 液晶
+```
 
-Result:
-TBD
+現在の結果：
 
-Impact on architecture:
-TBD
+- Renesas公式EK-RA8P1 MIPI CSIサンプルを独立プロジェクトとして導入した
+- FSP 6.5.0で周辺回路コードを生成した
+- LLVM 21.1.1でDebugビルドし、ELF実行ファイルの生成を確認した
+- デフォルトプロジェクト`firmware/ra8p1/`は変更していない
+- EK-RA8P1へ書き込み、1024×600のOV5640ライブ映像をLCDへ表示できた
+- カメラ初期化時のI²C転送中止を実機で切り分けた
+- 公式例のI²C待機処理が、転送中止とタイムアウト時に永久待機する問題を修正した
+- 現在の映像には黄色みと強いコントラストが見られる
+
+学んだこと：
+
+- OV5640の設定はI²Cで行い、画像本体はMIPI CSI-2で送られる
+- VINがYCbCr 4:2:2をRGB565へ変換して外部SDRAMへ書き込む
+- GLCDCが外部SDRAMの画像を継続的に読み出してLCDへ表示する
+- LCDのバックライト点灯だけでは、カメラ取得や表示開始の成功を示さない
+- 端末メニューが出ない場合は、メニューより前の初期化処理をCall Stackで調べる
+
+設計への影響：
+
+- この評価プロジェクトをカメラ入力とLCD表示の確認済み基準とする
+- 画質調整とμT-Kernelへの移植は、この基準を保存した上で別段階として行う
+
+## E004 カメラとLCDの色経路
+
+状態：次に実施
+
+疑問：黄色みと強いコントラストは、OV5640側とLCD表示側のどちらで生じているか。
+
+用語：
+
+- AWB（Auto White Balance）：白い物体が白く見えるように赤・緑・青の比率を調整する機能
+- AEC（Auto Exposure Control）：明るさに応じて露光時間を調整する機能
+- AGC（Auto Gain Control）：センサー信号の増幅率を自動調整する機能
+
+確認手順：
+
+1. 同じ室内照明とLCD設定を維持する
+2. 端末で解像度`1`、カメラモード`2`を選び、カラーバーを表示する
+3. 白、黒、赤、緑、青、黄、シアン、マゼンタの見え方を記録する
+4. カラーバーで問題がなければ、解像度選択へ戻ってライブカメラを表示する
+5. 同じ場面をスマートフォン画面などの基準と比較する
+
+判断基準：
+
+- カラーバーも黄色い：LCD出力、色順序、表示基板側を優先して調査する
+- カラーバーは正常でライブ映像だけ黄色い：OV5640のAWBまたは色補正を調査する
+- カラーバーの白黒も潰れる：VINの範囲変換またはGLCDC側を調査する
+- カラーバーは正常でライブ映像だけ白飛び・黒つぶれする：OV5640のAECとAGCを調査する
+
+この実験が終わるまで、AWB、AEC、AGC、VIN、GLCDCの設定を同時に変更しない。

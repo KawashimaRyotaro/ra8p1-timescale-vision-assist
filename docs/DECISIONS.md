@@ -1,85 +1,72 @@
-# Architecture Decisions
+# 設計判断
 
-## Decision policy
+判断は永久的な規則ではありません。新しい測定結果が得られた場合は、
+古い記録を残したまま更新します。
 
-Architecture decisions record current reasoning, not permanent rules.
+状態は「採用」「評価中」「不採用」「置換済み」のいずれかです。
 
-Decisions may be:
-- Accepted
-- Experimental
-- Rejected
-- Superseded
+## D001 リポジトリを開発記録の基準にする
 
-New experimental evidence may overturn previous decisions.
+状態：採用
 
-When a decision changes, preserve the old entry and add the reason
-for the new decision rather than deleting the history.
+ソース、設定、実験結果、判断理由をこのリポジトリに残します。
 
-## D001 — GitHub repository is the project system of record
+## D002 デフォルトプログラムを保護する
 
-Status: Accepted
+状態：採用
 
-The public GitHub repository contains project-owned source code,
-documentation, build metadata, and development history.
+`firmware/ra8p1/`と`baseline-ra8p1-bsp2`タグを復旧点として保持します。
 
-## D002 — Preserve official BSP baseline
+## D003 組込みビルドはe2 studioを基準にする
 
-Status: Accepted
+状態：採用
 
-The verified TRON Forum EK-RA8P1 μT-Kernel BSP2 baseline must remain
-recoverable through Git history and the baseline tag.
+FSP（Flexible Software Package）の生成、ビルド、書込み、実機デバッグは
+e2 studioで行います。FSPは周辺回路の設定と制御コードを生成する仕組みです。
 
-## D003 — e² studio is the embedded build authority
+## D004 アプリケーションと提供コードを分離する
 
-Status: Accepted
+状態：採用
 
-e² studio is used for:
-- FSP configuration;
-- firmware build;
-- flashing;
-- hardware debugging.
+独自コードは各プロジェクトの`Application/`へ置きます。
 
-VS Code/Codex does not maintain an independent embedded build
-configuration.
+## D005 生成コードを手で書き換えない
 
-## D004 — VS Code + Codex is the primary implementation interface
+状態：採用
 
-Status: Accepted
+周辺回路設定はFSP Configuratorで変更し、生成後の差分を確認します。
 
-VS Code is used for source editing, code inspection, documentation,
-Git operations, and host-side development.
+## D006 最初は一つのCPUコアを使う
 
-## D005 — Generated FSP code is not manually maintained
+状態：評価中
 
-Status: Accepted
+最初の統合はCortex-M85だけで行います。測定結果が必要性を示した場合は、
+Cortex-M33との分担を評価します。
 
-Peripheral configuration changes should be performed through the
-supported FSP/e² studio workflow.
+## D007 優先順位制御を研究仮説として扱う
 
-## D006 — Application logic remains separate from vendor code
+状態：評価中
 
-Status: Accepted
+緊急処理を高い優先順位にすることで応答時間を守れるか、実測して判断します。
 
-Project-owned logic should normally reside under
-`firmware/ra8p1/Application/`.
+## D008 人体への電気刺激を初期開発条件にしない
 
-## D007 — Single-core prototype comes first
+状態：採用
 
-Status: Accepted
+GVS（Galvanic Vestibular Stimulation）は、電気前庭刺激を意味します。
+初期評価では論理コマンド、計測出力、ダミー負荷を使用します。
 
-Dual-core RA8P1 operation is not required before the basic processing
-pipeline has been demonstrated.
+## D009 評価ごとに独立プロジェクトを作る
 
-## D008 — RTOS scheduling is a core technical contribution
+状態：採用
 
-Status: Accepted
+評価コードは`firmware/evaluations/<評価名>/`へ置きます。周辺回路設定、
+生成コード、ビルド結果を他の評価と分離し、デフォルトを変更しません。
 
-The high-urgency path must be protected from interference caused by
-lower-priority detailed processing.
+## D010 カメラ入力は高速直列カメラ規格を第一候補にする
 
-## D009 — Human GVS stimulation is not an MVP dependency
+状態：カメラ表示評価で採用
 
-Status: Accepted
-
-Initial validation uses a logical command interface, dummy load,
-or measurement output.
+MIPI CSI-2は、カメラ画像を高速な直列信号で送る規格です。Renesasの公式例と
+付属OV5640の構成に合い、EK-RA8P1実機で1024×600のライブ映像表示を確認しました。
+最終システムでも採用するかは、遅延とメモリ帯域の測定後に決めます。

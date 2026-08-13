@@ -20,8 +20,15 @@ Development workflow:
 - VS Code + Codex for source editing, analysis, documentation, and host-side tools
 - e² studio for FSP configuration, firmware build, flashing, and hardware debugging
 
-The e² studio project under `firmware/ra8p1/` is the authoritative
-embedded project.
+The e² studio project under `firmware/ra8p1/` is the protected,
+known-working default project and the integration baseline.
+
+Independent evaluation programs are created under:
+
+- `firmware/evaluations/<evaluation-name>/`
+
+Do not implement exploratory peripheral changes directly in the default
+project. Validate them in an independent evaluation project first.
 
 ## Read first
 
@@ -53,6 +60,8 @@ not merely an implementation detail.
 Application-owned code should normally be created or modified under:
 
 - `firmware/ra8p1/Application/`
+- `firmware/evaluations/*/Application/`
+- `firmware/evaluations/*/src/`
 - `tools/`
 - `tests/`
 - `models/`
@@ -63,6 +72,8 @@ instructed otherwise:
 
 - `firmware/ra8p1/ra_gen/`
 - `firmware/ra8p1/ra_cfg/`
+- `firmware/evaluations/*/ra_gen/`
+- `firmware/evaluations/*/ra_cfg/`
 - Renesas FSP source
 - μT-Kernel / BSP2 source
 
@@ -72,10 +83,11 @@ Do not manually rewrite generated FSP source files.
 
 If a peripheral configuration change is necessary:
 
-1. identify the required FSP module or pin setting;
-2. explain the required e² studio / Smart Configurator operation;
-3. let the user perform the GUI configuration;
-4. inspect the regenerated source afterward.
+1. select or create an independent evaluation project;
+2. identify the required FSP module or pin setting;
+3. explain the required e² studio / Smart Configurator operation;
+4. let the user perform the GUI configuration;
+5. inspect the regenerated source afterward.
 
 Do not invent pin assignments or peripheral settings.
 

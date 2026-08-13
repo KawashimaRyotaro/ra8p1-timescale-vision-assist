@@ -1,5 +1,26 @@
 # Development Roadmap
 
+## Purpose of this roadmap
+
+This roadmap describes the current best hypothesis for reaching
+a contest-ready prototype.
+
+It is not a fixed development sequence.
+
+The project explicitly allows exploratory work outside this roadmap
+when an experiment can improve understanding of RA8P1, edge AI,
+μT-Kernel, or the proposed architecture.
+
+Results from experiments may:
+- reorder milestones;
+- remove milestones;
+- add milestones;
+- change the system architecture;
+- replace implementation technologies.
+
+The only permanent requirement is to preserve a recoverable
+known-working baseline and eventually converge toward a contest submission.
+
 ## Development Policy
 
 Development proceeds incrementally from the already verified official
@@ -7,8 +28,7 @@ EK-RA8P1 μT-Kernel BSP2 baseline.
 
 Each milestone must leave the repository in a known working state.
 
-New functionality should not be introduced before the current milestone has
-been verified.
+
 
 The development order is:
 

@@ -97,3 +97,34 @@ The primary contribution is not:
 - demonstrating RA8P1 dual-core operation merely for complexity.
 
 AI accuracy matters only insofar as it supports the complete system.
+
+## Project goals
+
+This project has two primary goals.
+
+### Goal 1 — Learn edge AI systems through implementation
+
+The project is a practical learning environment for:
+
+- RA8P1 architecture;
+- Cortex-M85 / Cortex-M33;
+- Ethos-U55 NPU;
+- embedded AI deployment;
+- camera pipelines;
+- memory and DMA;
+- μT-Kernel;
+- real-time scheduling;
+- hardware/software co-design.
+
+Learning through experiments is a first-class project outcome.
+
+The architecture is therefore expected to evolve as understanding
+of the platform improves.
+
+### Goal 2 — Complete a strong TRON Programming Contest entry
+
+The project should ultimately converge into a reproducible,
+measurable, demonstrable application for TRON Programming Contest 2026.
+
+Contest completion must not prevent useful exploration,
+but exploration should eventually feed back into the final system.

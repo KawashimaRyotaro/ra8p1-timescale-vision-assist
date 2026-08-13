@@ -145,11 +145,41 @@ After modifying files:
 3. identify what must be verified on EK-RA8P1;
 4. do not claim unperformed hardware validation.
 
-## Scope control
+## Development modes
 
-Do not broaden the task without explicit instruction.
+This project has two valid development modes.
 
-Do not add camera, AI, audio, dual-core, or GVS functionality merely
-because it may eventually be required.
+### Integration mode
 
-Implement the current milestone only.
+Used when implementing the contest prototype.
+
+In integration mode:
+- preserve known-working behavior;
+- make small coherent changes;
+- keep `main` buildable;
+- avoid unrelated scope expansion;
+- verify changes on EK-RA8P1 when required.
+
+### Exploration mode
+
+Used to learn RA8P1, edge AI, μT-Kernel, FSP, peripherals,
+memory architecture, NPU operation, and related technologies.
+
+In exploration mode:
+- experiments may intentionally precede the current roadmap;
+- temporary or incomplete implementations are acceptable;
+- architecture assumptions may be challenged;
+- alternative implementations should be compared when useful;
+- experiments do not need to be merged into `main`.
+
+Prefer `exp/*` branches or clearly isolated experimental code.
+
+The purpose of an experiment is not merely to produce working code.
+It should answer a technical question or teach something about the platform.
+
+After an experiment, summarize:
+1. what was tested;
+2. what worked;
+3. what failed;
+4. what was learned;
+5. whether the result should affect the system architecture or roadmap.

@@ -1,5 +1,20 @@
 # Architecture Decisions
 
+## Decision policy
+
+Architecture decisions record current reasoning, not permanent rules.
+
+Decisions may be:
+- Accepted
+- Experimental
+- Rejected
+- Superseded
+
+New experimental evidence may overturn previous decisions.
+
+When a decision changes, preserve the old entry and add the reason
+for the new decision rather than deleting the history.
+
 ## D001 — GitHub repository is the project system of record
 
 Status: Accepted

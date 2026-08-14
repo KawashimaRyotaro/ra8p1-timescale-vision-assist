@@ -21,6 +21,7 @@ Release/
 __pycache__/
 *.pyc
 .venv/
+.ruhmi-work/
 
 # Logs
 *.log

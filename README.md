@@ -7,6 +7,8 @@ TRONプログラミングコンテスト2026へ向けた、歩行支援用エッ
 
 - `firmware/ra8p1/`：実機確認済みのデフォルトプログラム
 - `firmware/evaluations/camera_lcd/`：OV5640カメラ表示の独立評価プロジェクト
+- `firmware/evaluations/npu_benchmark/`：固定入力によるNPU推論の独立評価プロジェクト
+- `firmware/evaluations/cpu_benchmark/`：同じモデルによるCPU対NPU性能比較プロジェクト
 - デフォルトプログラムは評価コードから変更しない
 - カメラ表示はRenesas公式MIPI CSIサンプルを基に実装済み
 - FSP 6.5.0による生成とDebugビルドを確認済み

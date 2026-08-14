@@ -22,12 +22,87 @@
 
 ## E002 Ethos-U55による最初の推論
 
-状態：計画中
+状態：NPU・CPU実機測定完了
 
 Ethos-U55はRA8P1に搭載された、AI（Artificial Intelligence：人工知能）計算を
 支援する回路です。
 
-疑問：既知のモデルを実行するための最小構成は何か。
+プロジェクト：`firmware/evaluations/npu_benchmark/`
+
+疑問：既知の固定モデルをNPUで正しく実行できるか。また推論時間のばらつきはどの程度か。
+
+使用する名称：
+
+- NPU（Neural Processing Unit）：ニューラルネットワーク演算専用回路
+- RUHMI（Robust Unified Heterogeneous Model Integration）：ルネサスのAIモデル変換基盤
+- INT8：8ビット符号付き整数による量子化形式
+- DWT（Data Watchpoint and Trace）：Cortex-M85内部のデバッグ・周期計測回路
+
+実装済み内容：
+
+- MLCommons Tiny `ad01_int8.tflite`をRUHMI 2.6.0でCコードへ変換した
+- 10演算子すべてがEthos-U55へ割り当てられることを変換時に確認した
+- 固定入力640要素と基準出力640要素をプロジェクトへ格納した
+- ウォームアップ1回後に100回測定し、初回・最小・平均・最大周期を記録する
+- NPU稼働周期数を性能監視回路から取得する
+- 推論出力を基準出力と要素ごとに比較する
+- FSP 6.5.0とLLVM 21.1.1へ移行し、Debugビルドを0エラーで完了した
+
+NPU実機測定結果：
+
+- 状態：成功
+- CPUクロック：1,000,000,000 Hz
+- 最小：107,679周期
+- 平均：107,680周期、約107.680マイクロ秒
+- 最大：107,740周期
+- NPU稼働周期平均：53,277周期
+- 出力不一致：0/640
+- 最大絶対誤差：0
+- 最大と最小の差：61周期、平均に対して約0.057%
+
+CPU比較プロジェクト：`firmware/evaluations/cpu_benchmark/`
+
+CPU実機測定結果：
+
+- 状態：成功
+- CPUクロック：1,000,000,000 Hz
+- 最小：198,343周期
+- 平均：199,820周期、約199.820マイクロ秒
+- 最大：200,812周期
+- 出力不一致：0/640
+- 最大絶対誤差：0
+
+CPU対NPU比較結果：
+
+- NPU平均推論時間：107.680マイクロ秒
+- CPU平均推論時間：199.820マイクロ秒
+- NPUによる高速化：1.855倍
+- NPUによる推論時間短縮：約46.1%、約92.14マイクロ秒
+- CPU版とNPU版の出力は640要素すべて一致した
+
+データシートおよび変換時予測との比較：
+
+- RA8P1のNPUは最大500 MHz、8ビットMAC演算器256個、理論最大256 GOPS
+- MAC（Multiply-Accumulate）は乗算と加算を一組として数える演算
+- GOPS（Giga Operations Per Second）は1秒当たり10億演算
+- 264,192 MACを理論ピークで処理する最短時間は約2.064マイクロ秒
+- 実測107.680マイクロ秒の理論ピーク利用率は約1.92%、実効性能は約4.91 GOPS
+- RUHMI予測は102.94マイクロ秒、51,470 NPU周期
+- 実測は予測より時間で約4.6%、NPU稼働周期で約3.5%多く、予測とほぼ一致した
+- RUHMI予測では内蔵フラッシュ読出し50,312周期がNPU演算40,248周期より長い
+
+学んだこと：
+
+- データシートの256 GOPSは全演算器を高い割合で使える場合の理論ピークである
+- 今回の小規模モデルではNPU起動、同期、重み読出しの固定負担が相対的に大きい
+- CPU比1.855倍だけではNPUの異常とは判断できず、モデル規模とメモリ律速を確認する必要がある
+- 実測値がRUHMI予測へ約95%の水準で一致しているため、今回のNPU動作は妥当と判断する
+
+参照：
+
+- [RA8P1 Group Datasheet](https://www.renesas.com/en/document/dst/ra8p1-group-datasheet)
+- [Renesas RA8P1 performance announcement](https://www.renesas.com/en/about/newsroom/renesas-sets-new-mcu-performance-bar-1-ghz-ra8p1-devices-ai-acceleration)
+- [Building a Vision AI Application using the RA8P1 MCU with Ethos-U55 NPU](https://www.renesas.com/en/document/apn/building-vision-ai-application-using-ra8p1-mcu-ethos-u55-npu)
 
 ## E003 OV5640から液晶までの画像経路
 

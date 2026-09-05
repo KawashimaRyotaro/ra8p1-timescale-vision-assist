@@ -1,0 +1,39 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra_cfg/fsp_cfg/bsp",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra_gen",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra_cfg/fsp_cfg",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/src",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/Application",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra/fsp/inc",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra/fsp/inc/api",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra/fsp/inc/instances",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/ra/arm/CMSIS_6/CMSIS/Core/Include",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/mtk3_bsp2",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/mtk3_bsp2/config",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/mtk3_bsp2/include",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/mtk3_bsp2/mtkernel/kernel/knlinc",
+                "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/Debug", 
+                "C:/Renesas/RA/e2studio_v2026-04.2_fsp_v6.5.0/toolchains/gcc_arm/13.2.rel1/lib/gcc/arm-none-eabi/13.2.1/include",
+                "C:/Renesas/RA/e2studio_v2026-04.2_fsp_v6.5.0/toolchains/gcc_arm/13.2.rel1/lib/gcc/arm-none-eabi/13.2.1/include-fixed",
+                "C:/Renesas/RA/e2studio_v2026-04.2_fsp_v6.5.0/toolchains/gcc_arm/13.2.rel1/arm-none-eabi/include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "_RENESAS_RA_",
+                "_RA_CORE=CPU0",
+                "_RA_ORDINAL=1",
+                "_RAFSP_EK_RA8P1_"
+            ],
+            "compilerPath": "C:/Renesas/RA/e2studio_v2026-04.2_fsp_v6.5.0/toolchains/gcc_arm/13.2.rel1/bin/arm-none-eabi-gcc.exe",
+            "compileCommands": "${workspaceFolder}/firmware/evaluations/mtkernel_test0_dispMovie/Debug/compile_commands.json",
+            "cStandard": "c99",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-arm"
+        }
+    ],
+    "version": 4
+}

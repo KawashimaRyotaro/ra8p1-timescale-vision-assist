@@ -449,44 +449,17 @@ ospi_cache_status_t ospi_cache_store(
         (uint8_t *) (OSPI_CACHE_BASE_ADDRESS + offset);
 
     /*
-     * Number of sectors that contain this data.
+     * 1. Erase required sectors.
      */
-    uint32_t erase_size =
-        ((size + OSPI_CACHE_SECTOR_SIZE - 1U) /
-         OSPI_CACHE_SECTOR_SIZE) *
-        OSPI_CACHE_SECTOR_SIZE;
-
-    /*
-     * 1. Erase all sectors occupied by the data.
-     */
-    for (uint32_t pos = 0U;
-         pos < erase_size;
-         pos += OSPI_CACHE_SECTOR_SIZE)
-    {
-        err = R_OSPI_B_Erase(
-            &g_ospi_ctrl,
-            flash_base + pos,
-            OSPI_CACHE_SECTOR_SIZE
+    status =
+        ospi_cache_erase(
+            offset,
+            size
         );
 
-        if (FSP_SUCCESS != err)
-        {
-            tm_printf(
-                (UB *)"[OSPI] erase failed: pos=%u err=%d\n",
-                pos,
-                err
-            );
-
-            return OSPI_CACHE_ERROR_ERASE;
-        }
-
-        status =
-            ospi_cache_wait_ready(OSPI_CACHE_ERASE_TIMEOUT_US);
-
-        if (OSPI_CACHE_OK != status)
-        {
-            return status;
-        }
+    if (OSPI_CACHE_OK != status)
+    {
+        return status;
     }
 
     /*
@@ -505,6 +478,20 @@ ospi_cache_status_t ospi_cache_store(
             (remaining > OSPI_CACHE_WRITE_CHUNK_SIZE)
             ? OSPI_CACHE_WRITE_CHUNK_SIZE
             : remaining;
+
+    #if BSP_CFG_DCACHE_ENABLED
+        /*
+        * R_OSPI_B_Write() uses DMAC.
+        *
+        * The CPU may have modified the source buffer only in
+        * D-cache. Clean the corresponding cache lines so that
+        * DMAC sees the latest data in physical memory.
+        */
+        SCB_CleanDCache_by_Addr(
+            (volatile void *) (data + pos),
+            (int32_t) chunk
+        );
+    #endif
 
         err = R_OSPI_B_Write(
             &g_ospi_ctrl,
@@ -533,13 +520,6 @@ ospi_cache_status_t ospi_cache_store(
 
         if (OSPI_CACHE_OK != status)
         {
-            tm_printf(
-                (UB *)"[OSPI] write wait failed:"
-                    " pos=%u status=%d\n",
-                pos,
-                status
-            );
-
             return status;
         }
 
@@ -578,9 +558,7 @@ ospi_cache_status_t ospi_cache_store(
     );
 
     return OSPI_CACHE_OK;
-
-        return OSPI_CACHE_OK;
-    }
+}
 
 
 const uint8_t * ospi_cache_mapped_ptr(uint32_t offset)
@@ -592,4 +570,74 @@ const uint8_t * ospi_cache_mapped_ptr(uint32_t offset)
 
     return (const uint8_t *)
         (OSPI_CACHE_BASE_ADDRESS + offset);
+}
+
+
+ospi_cache_status_t ospi_cache_erase(
+    uint32_t offset,
+    uint32_t size)
+{
+    fsp_err_t err;
+
+    if ((0U == size) ||
+        (0U != (offset % OSPI_CACHE_SECTOR_SIZE)))
+    {
+        return OSPI_CACHE_ERROR_ARGUMENT;
+    }
+
+    if ((offset >= OSPI_CACHE_CAPACITY_BYTES) ||
+        (size > (OSPI_CACHE_CAPACITY_BYTES - offset)))
+    {
+        return OSPI_CACHE_ERROR_ARGUMENT;
+    }
+
+    uint32_t erase_size =
+        ((size + OSPI_CACHE_SECTOR_SIZE - 1U) /
+         OSPI_CACHE_SECTOR_SIZE) *
+        OSPI_CACHE_SECTOR_SIZE;
+
+    uint8_t * flash_base =
+        (uint8_t *) (OSPI_CACHE_BASE_ADDRESS + offset);
+
+    for (uint32_t pos = 0U;
+         pos < erase_size;
+         pos += OSPI_CACHE_SECTOR_SIZE)
+    {
+        err = R_OSPI_B_Erase(
+            &g_ospi_ctrl,
+            flash_base + pos,
+            OSPI_CACHE_SECTOR_SIZE
+        );
+
+        if (FSP_SUCCESS != err)
+        {
+            tm_printf(
+                (UB *)"[OSPI] erase failed:"
+                       " offset=0x%08X err=%d\n",
+                offset + pos,
+                err
+            );
+
+            return OSPI_CACHE_ERROR_ERASE;
+        }
+
+        ospi_cache_status_t status =
+            ospi_cache_wait_ready(
+                OSPI_CACHE_ERASE_TIMEOUT_US
+            );
+
+        if (OSPI_CACHE_OK != status)
+        {
+            tm_printf(
+                (UB *)"[OSPI] erase wait failed:"
+                       " offset=0x%08X status=%d\n",
+                offset + pos,
+                status
+            );
+
+            return status;
+        }
+    }
+
+    return OSPI_CACHE_OK;
 }

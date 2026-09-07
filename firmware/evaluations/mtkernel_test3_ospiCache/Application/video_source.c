@@ -1,7 +1,6 @@
 #include <stddef.h>
-#include <tm/tmonitor.h>
 #include "video_source.h"
-#include "assets/video_data.h"
+#include "video_cache.h"
 #include "ospi_cache.h"
 #include "assets/video_data.h"
 
@@ -21,47 +20,44 @@
 
 static bool s_ospi_video_ready = false;
 
+static const uint8_t * s_video_base = NULL;
+static uint32_t s_frame_size = 0U;
+static uint32_t s_frame_count = 0U;
 
-const uint8_t * video_source_get_frame(uint32_t frame_index)
+
+const uint8_t * video_source_get_frame(
+    uint32_t frame_index)
 {
     if ((!s_ospi_video_ready) ||
-        (frame_index >= VIDEO_FRAME_COUNT))
+        (frame_index >= s_frame_count))
     {
         return NULL;
     }
 
-    const uint8_t * video_base =
-        ospi_cache_mapped_ptr(VIDEO_OSPI_OFFSET);
-
-    if (NULL == video_base)
-    {
-        return NULL;
-    }
-
-    return video_base +
-        (frame_index * VIDEO_FRAME_SIZE_BYTES);
+    return s_video_base +
+        (frame_index * s_frame_size);
 }
 
 
-bool video_source_prepare_ospi(void)
+bool video_source_bind_ospi(void)
 {
-    ospi_cache_status_t status;
+    video_cache_header_t header;
+    const uint8_t * payload = NULL;
 
-    status = ospi_cache_store(
-        VIDEO_OSPI_OFFSET,
-        g_video_data,
-        VIDEO_TOTAL_SIZE_BYTES
-    );
+    video_cache_status_t status =
+        video_cache_open(
+            &header,
+            &payload
+        );
 
-    tm_printf(
-        (UB *)"[OSPI] store status=%d\n",
-        status
-    );
-
-    if (OSPI_CACHE_OK != status)
+    if (VIDEO_CACHE_OK != status)
     {
         return false;
     }
+
+    s_video_base  = payload;
+    s_frame_size  = header.frame_size;
+    s_frame_count = header.frame_count;
 
     s_ospi_video_ready = true;
 

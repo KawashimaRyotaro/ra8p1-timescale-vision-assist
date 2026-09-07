@@ -7,6 +7,8 @@
 #include "dummy_tasks.h"
 #include "ospi_cache.h"
 #include "video_source.h"
+#include "video_cache.h"
+#include "assets/video_data.h"
 
 
 EXPORT INT usermain(void)
@@ -43,20 +45,50 @@ EXPORT INT usermain(void)
         goto error;
     }
 
+    // Please remove comentout when you run this project for the first time
+    // const video_cache_info_t video_info =
+    // {
+    //     .width        = 128U,
+    //     .height       = 72U,
+    //     .frame_count  = 10U,
+    //     .frame_size   = 128U * 72U * 2U,
+    //     .pixel_format = 1U,
+    //     .fps_milli    = 10000U
+    // };
+
+    // video_cache_status_t cache_status =
+    //     video_cache_store(
+    //         g_video_data,
+    //         sizeof(g_video_data),
+    //         &video_info
+    //     );
+
+    // tm_printf(
+    //     (UB *)"[VideoCache] store=%d\n",
+    //     cache_status
+    // );
+
+    // if (VIDEO_CACHE_OK != cache_status)
+    // {
+    //     tm_putstring(
+    //         (UB *)"[VideoCache] ERROR: store failed\n"
+    //     );
+
+    //     goto error;
+    // }
 
     /*
      * Prepare video data in OSPI flash.
      */
-    tm_putstring((UB *)"[OSPI] loading video cache...\n");
+    tm_putstring((UB *)"[Video] binding OSPI source...\n");
 
-    if (!video_source_prepare_ospi())
+    if (!video_source_bind_ospi())
     {
-        tm_putstring((UB *)"[OSPI] ERROR: video cache load failed\n");
+        tm_putstring((UB *)"[Video] ERROR: OSPI source bind failed\n");
         goto error;
     }
 
-    tm_putstring((UB *)"[OSPI] video cache ready: 184320 bytes\n");
-
+    tm_putstring((UB *)"[Video] OSPI source ready\n");
 
     /*
      * Create application tasks.

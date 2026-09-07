@@ -28,4 +28,9 @@ ospi_cache_status_t ospi_cache_store(
 
 const uint8_t * ospi_cache_mapped_ptr(uint32_t offset);
 
+ospi_cache_status_t ospi_cache_erase(
+    uint32_t offset,
+    uint32_t size
+);
+
 #endif

@@ -305,6 +305,7 @@
             <slot name="IRQ26.CPU0" secure="true"/>
             <slot name="IRQ27.CPU0" secure="true"/>
             <slot name="IRQ28.CPU0" secure="true"/>
+            <slot name="IRQ29.CPU0" secure="true"/>
         </peripheral>
         <peripheral name="ICU.CPU1">
             <slot name="IRQ0.CPU1" secure="true"/>
@@ -548,6 +549,7 @@
             <assign peripheral="ICU.IRQ26"/>
             <assign peripheral="ICU.IRQ27"/>
             <assign peripheral="ICU.IRQ28"/>
+            <assign peripheral="ICU.IRQ29"/>
         </zone>
     </zones>
 </azone>

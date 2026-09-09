@@ -1010,6 +1010,11 @@ FSP Configuration
   Module "IPC (r_ipc)"
     Parameter Checking: Default (BSP)
     
+  Module "Arm Ethos-U Core Driver Wrapper (rm_ethosu)"
+    Parameter Checking: Default (BSP)
+    Ethos-U log level: Disabled
+    
+  Module "Arm Ethos-U Core Driver"
   HAL
     Instance "g_ioport I/O Port (r_ioport)"
       Name: g_ioport
@@ -2128,3 +2133,13 @@ FSP Configuration
       Callback: NULL
       Interrupt Priority: Disabled
       
+    Instance "Arm Ethos-U Core Driver Wrapper (rm_ethosu)"
+      Name: g_rm_ethosu0
+      Callback: NULL
+      NPU Interrupt Priority: Priority 12
+      Enable Secure Mode: Enabled
+      Enable Privilege Mode: Enabled
+      
+      Instance "Arm Ethos-U Core Driver"
+        Name: g_ethosu0
+        

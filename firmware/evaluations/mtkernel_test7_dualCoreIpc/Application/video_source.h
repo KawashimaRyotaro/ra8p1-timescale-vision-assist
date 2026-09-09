@@ -45,5 +45,16 @@ void video_source_release_read_buffer(
     uint32_t slot
 );
 
+void video_source_npu_consumer_enable(void);
+
+const uint8_t * video_source_acquire_npu_buffer(
+    uint32_t * slot,
+    uint32_t * frame_index
+);
+
+void video_source_release_npu_buffer(
+    uint32_t slot
+);
+
 
 #endif /* VIDEO_SOURCE_H */

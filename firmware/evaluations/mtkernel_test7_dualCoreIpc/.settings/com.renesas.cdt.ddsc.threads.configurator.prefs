@@ -5,5 +5,6 @@ collapse/module.driver.i2c_on_iic_master.317421864=false
 collapse/module.driver.ospi_on_ospi_b.1679791043=false
 collapse/module.driver.rm_block_media_on_rm_block_media_usb.53072858=false
 collapse/module.freertos.freertosfat.1182806308=false
+collapse/module.middleware.rm_ethosu.200892053=false
 collapse/module.middleware.rm_freertos_plus_fat.398827822=false
 eclipse.preferences.version=1

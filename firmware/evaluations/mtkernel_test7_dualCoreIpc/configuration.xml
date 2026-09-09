@@ -381,8 +381,16 @@
       <description>USB Memory Implementation</description>
       <originalPack>Renesas.RA.6.5.0.pack</originalPack>
     </component>
+    <component apiversion="" class="Ethos-U" condition="" group="Core" subgroup="Driver" variant="" vendor="Arm" version="25.2.0+renesas.0.fsp.6.5.0">
+      <description>Ethos-U core driver</description>
+      <originalPack>Arm.Ethos-U-Core-Driver.25.2.0+renesas.0.fsp.6.5.0.pack</originalPack>
+    </component>
     <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ipc" variant="" vendor="Renesas" version="6.5.0">
       <description>IPC</description>
+      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
+    </component>
+    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_ethosu" variant="" vendor="Renesas" version="6.5.0">
+      <description>Ethos-U Driver Wrapper</description>
       <originalPack>Renesas.RA.6.5.0.pack</originalPack>
     </component>
   </raComponentSelection>
@@ -1507,6 +1515,16 @@
       <property id="module.driver.ipc.callback" value="NULL"/>
       <property id="module.driver.ipc.ipl" value="_disabled"/>
     </module>
+    <module id="module.middleware.rm_ethosu.200892053">
+      <property id="module.middleware.rm_ethosu.name" value="g_rm_ethosu0"/>
+      <property id="module.middleware.rm_ethosu.p_callback" value="NULL"/>
+      <property id="module.middleware.rm_ethosu.ipl" value="board.icu.common.irq.priority12"/>
+      <property id="module.middleware.rm_ethosu.secure_mode" value="module.middleware.rm_ethosu.secure_mode.enabled"/>
+      <property id="module.middleware.rm_ethosu.privilege_mode" value="module.middleware.rm_ethosu.privilege_mode.enabled"/>
+    </module>
+    <module id="module.arm.ethosu.core.driver.906591541">
+      <property id="module.arm.ethosu.core.driver.name" value="g_ethosu0"/>
+    </module>
     <context id="_hal.0">
       <stack module="module.driver.ioport_on_ioport.0"/>
       <stack module="module.driver.adc_on_adc_b.1129451091"/>
@@ -1529,6 +1547,9 @@
       </stack>
       <stack module="module.driver.ipc_on_ipc.715918922"/>
       <stack module="module.driver.ipc_on_ipc.1291070779"/>
+      <stack module="module.middleware.rm_ethosu.200892053">
+        <stack module="module.arm.ethosu.core.driver.906591541" requires="module.middleware.rm_ethosu.requires.driver"/>
+      </stack>
     </context>
     <config id="config.driver.ospi_b">
       <property id="config.driver.ospi_b.param_checking_enable" value="config.driver.ospi_b.param_checking_enable.bsp"/>
@@ -1605,6 +1626,10 @@
       <property id="config.driver.iic_master.param_checking_enable" value="config.driver.iic_master.param_checking_enable.bsp"/>
       <property id="config.driver.iic_master.dtc_enable" value="config.driver.iic_master.dtc_enable.disabled"/>
       <property id="config.driver.iic_master.addr_mode_10_bit_enable" value="config.driver.iic_master.addr_mode_10_bit_enable.disabled"/>
+    </config>
+    <config id="config.middleware.rm_ethosu">
+      <property id="config.middleware.rm_ethosu.param_checking_enable" value="config.middleware.rm_ethosu.param_checking_enable.bsp"/>
+      <property id="config.middleware.rm_ethosu.log_level" value="config.middleware.rm_ethosu.log_level.off"/>
     </config>
     <config id="config.middleware.rm_freertos_plus_fat">
       <property id="config.middleware.rm_freertos_plus_fat.param_checking_enable" value="config.middleware.rm_freertos_plus_fat.param_checking_enable.bsp"/>

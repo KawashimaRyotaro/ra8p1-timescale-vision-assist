@@ -9,6 +9,11 @@
 #include "ipc_test.h"
 
 
+void npu_smoke_test(void);
+void npu_inference_test(void);
+void npu_worker_start(void);
+
+
 EXPORT INT usermain(void)
 {
     ipc_test_start();
@@ -57,6 +62,8 @@ EXPORT INT usermain(void)
 
         goto error;
     }
+
+    npu_worker_start();
 
     /*
      * Start application tasks.

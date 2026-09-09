@@ -34,3 +34,9 @@ firmware/evaluations/*/mtk3_bsp2/
 
 # Local headless e2 studio verification workspace
 .e2studio-headless/
+
+# data
+*.ogv
+*.webm
+*.RAW
+*.raw

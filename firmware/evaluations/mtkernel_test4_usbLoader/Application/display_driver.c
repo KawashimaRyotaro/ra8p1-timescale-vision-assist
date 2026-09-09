@@ -312,20 +312,6 @@ display_driver_status_t display_driver_present_rgb565(
     }
 
     /*
-     * The framebuffer is written by the CPU through the write-back D-cache,
-     * while GLCDC reads SDRAM directly.
-     * Clean the back buffer before handing it to GLCDC.
-     */
-    uint32_t frame_bytes =
-        DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
-        DISPLAY_VSIZE_INPUT0;
-
-    SCB_CleanDCache_by_Addr(
-        (uint32_t *) framebuffer,
-        (int32_t) frame_bytes
-    );
-
-    /*
      * Request GLCDC to display this framebuffer.
      */
     for (uint32_t retry = 0U;

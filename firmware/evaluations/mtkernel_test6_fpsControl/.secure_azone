@@ -194,9 +194,11 @@
         </peripheral>
         <peripheral name="IIC1.CPU0" group="IIC" security="s"/>
         <peripheral name="GLCDC.CPU0" security="s"/>
-        <peripheral name="DMA_DMAC0.CPU0" group="DMA_DMAC" security="s"/>
+        <peripheral name="DMA_DMAC2.CPU0" group="DMA_DMAC" security="s"/>
         <peripheral name="USB_FS.CPU0" security="s"/>
         <peripheral name="USB_HS.CPU0" security="s"/>
+        <peripheral name="DMA_DMAC0.CPU0" group="DMA_DMAC" security="s"/>
+        <peripheral name="DMA_DMAC1.CPU0" group="DMA_DMAC" security="s"/>
         <peripheral name="ICU.CPU0">
             <slot name="IRQ0.CPU0" secure="true"/>
             <slot name="IRQ1.CPU0" secure="true"/>
@@ -224,6 +226,8 @@
             <slot name="IRQ23.CPU0" secure="true"/>
             <slot name="IRQ24.CPU0" secure="true"/>
             <slot name="IRQ25.CPU0" secure="true"/>
+            <slot name="IRQ26.CPU0" secure="true"/>
+            <slot name="IRQ27.CPU0" secure="true"/>
         </peripheral>
     </partition>
 </azone>

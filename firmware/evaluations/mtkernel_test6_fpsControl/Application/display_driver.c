@@ -1,4 +1,5 @@
 #include <tm/tmonitor.h>
+#include <tk/tkernel.h>
 
 #include "display_driver.h"
 #include "hal_data.h"
@@ -9,12 +10,81 @@
 
 
 static uint8_t s_initialized = 0U;
-static uint32_t s_video_back_buffer = 1U;
+
+
+/*
+ * Buffer which may be returned to the USB producer
+ * after GLCDC has completed the active scan.
+ */
+static volatile uint32_t
+    s_pending_release_slot =
+        VIDEO_SOURCE_INVALID_SLOT;
+
+static volatile uint8_t
+    s_pending_release_armed = 0U;
+
+
+void display_driver_callback(
+    display_callback_args_t * p_args)
+{
+    if (NULL == p_args)
+    {
+        return;
+    }
+
+
+    if (DISPLAY_EVENT_LINE_DETECTION !=
+        p_args->event)
+    {
+        return;
+    }
+
+
+    /*
+     * GLCDC has completed the active image scan.
+     *
+     * The framebuffer used by the previous scan
+     * can now safely be returned to the USB producer.
+     *
+     * video_source_release_read_buffer() does not call
+     * any μT-Kernel service; it only changes the
+     * buffer ownership state, so it can be used here.
+     */
+    if (0U != s_pending_release_armed)
+    {
+        uint32_t slot =
+            s_pending_release_slot;
+
+
+        video_source_release_read_buffer(
+            slot
+        );
+
+
+        __DMB();
+
+        s_pending_release_slot =
+            VIDEO_SOURCE_INVALID_SLOT;
+
+        s_pending_release_armed = 0U;
+
+        __DMB();
+    }
+}
 
 
 display_driver_status_t display_driver_init(void)
 {
     fsp_err_t err;
+
+    tm_printf(
+        (UB *)"[DisplayCfg] "
+               "hsize=%u vsize=%u stride=%u format=%u\n",
+        DISPLAY_HSIZE_INPUT0,
+        DISPLAY_VSIZE_INPUT0,
+        DISPLAY_BUFFER_STRIDE_BYTES_INPUT0,
+        (uint32_t) g_display0_cfg.input[0].format
+    );
 
     err = R_GLCDC_Open(
         &g_display0_ctrl,
@@ -41,68 +111,75 @@ display_driver_status_t display_driver_init(void)
 }
 
 
-display_driver_status_t display_driver_fill(uint32_t color)
+display_driver_status_t
+display_driver_fill(uint32_t color)
 {
-    uint8_t * buffer0;
-    uint8_t * buffer1;
-    uint32_t  frame_bytes;
-
     if (0U == s_initialized)
     {
-        return DISPLAY_DRIVER_ERROR_NOT_INITIALIZED;
+        return
+            DISPLAY_DRIVER_ERROR_NOT_INITIALIZED;
     }
 
-    /*
-     * Use the actual framebuffer base address
-     * generated in the GLCDC configuration.
-     */
-    buffer0 =
-        (uint8_t *) g_display0_cfg.input[0].p_base;
 
-    buffer1 =
-        buffer0 +
-        (DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
-         DISPLAY_VSIZE_INPUT0);
+    uint8_t * buffer0 =
+        (uint8_t *)
+        g_display0_cfg.input[0].p_base;
 
-    frame_bytes =
+
+    uint32_t frame_bytes =
         DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
         DISPLAY_VSIZE_INPUT0;
 
-    /*
-     * Fill BOTH framebuffers.
-     */
+
+    uint8_t * buffer1 =
+        buffer0 + frame_bytes;
+
+
+    uint16_t pixel =
+        (uint16_t) color;
+
+
     for (uint32_t y = 0U;
          y < DISPLAY_VSIZE_INPUT0;
          y++)
     {
-        uint32_t * row0 =
-            (uint32_t *)
-            (buffer0 +
-             y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0);
+        uint16_t * row0 =
+            (uint16_t *)
+            (
+                buffer0 +
+                y *
+                DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+            );
 
-        uint32_t * row1 =
-            (uint32_t *)
-            (buffer1 +
-             y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0);
+
+        uint16_t * row1 =
+            (uint16_t *)
+            (
+                buffer1 +
+                y *
+                DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+            );
+
 
         for (uint32_t x = 0U;
              x < DISPLAY_HSIZE_INPUT0;
              x++)
         {
-            row0[x] = color;
-            row1[x] = color;
+            row0[x] = pixel;
+            row1[x] = pixel;
         }
     }
 
-    /*
-     * Cortex-M85 uses a write-back data cache.  The GLCDC reads SDRAM
-     * directly, so make the CPU-written pixels visible to the GLCDC before
-     * returning ownership of the framebuffers to the display hardware.
-     */
+
+#if BSP_CFG_DCACHE_ENABLED
+
     SCB_CleanDCache_by_Addr(
-        (uint32_t *) buffer0,
+        (volatile void *) buffer0,
         (int32_t) (frame_bytes * 2U)
     );
+
+#endif
+
 
     return DISPLAY_DRIVER_OK;
 }
@@ -192,198 +269,133 @@ display_driver_status_t display_driver_test_pattern(void)
 }
 
 
-display_driver_status_t display_driver_present_rgb888(
+display_driver_status_t display_driver_present_rgb565(
     const uint8_t * source,
     uint32_t source_width,
     uint32_t source_height)
 {
-    fsp_err_t err;
+    fsp_err_t err =
+        FSP_ERR_INVALID_ARGUMENT;
 
-    /*
-     * GLCDC must already be initialized.
-     */
-    if (0U == s_initialized)
-    {
-        return DISPLAY_DRIVER_ERROR_NOT_INITIALIZED;
-    }
 
-    /*
-     * Validate source image.
-     */
     if ((NULL == source) ||
-        (0U == source_width) ||
-        (0U == source_height))
-    {
-        return DISPLAY_DRIVER_ERROR_ARGUMENT;
-    }
-
-    /*
-     * This function performs 1:1 display without scaling.
-     * Therefore the source must fit inside the GLCDC framebuffer.
-     */
-    if ((source_width > DISPLAY_HSIZE_INPUT0) ||
-        (source_height > DISPLAY_VSIZE_INPUT0))
+        (VIDEO_SOURCE_WIDTH != source_width) ||
+        (VIDEO_SOURCE_HEIGHT != source_height))
     {
         return DISPLAY_DRIVER_ERROR_ARGUMENT;
     }
 
 
     /*
-     * Center the source image in the display framebuffer.
-     *
-     * Current configuration:
-     *
-     *   Display : 1024 x 600
-     *   Source  :  640 x 480
-     *
-     * Therefore:
-     *
-     *   offset_x = 192
-     *   offset_y = 60
+     * R_GLCDC_BufferChange() requires 64-byte alignment.
      */
-    uint32_t offset_x =
-        (DISPLAY_HSIZE_INPUT0 -
-         source_width) / 2U;
-
-    uint32_t offset_y =
-        (DISPLAY_VSIZE_INPUT0 -
-         source_height) / 2U;
-
-
-    /*
-     * Select the GLCDC back buffer.
-     */
-    uint8_t * framebuffer =
-        (uint8_t *)
-        fb_background[s_video_back_buffer];
-
-
-    /*
-     * Copy packed 24-bit RGB input into the
-     * 32-bit RGB888 GLCDC framebuffer.
-     *
-     * Source:
-     *
-     *   R G B | R G B | R G B ...
-     *
-     * Destination:
-     *
-     *   0x00RRGGBB
-     *
-     * No scaling is performed.
-     */
-    for (uint32_t sy = 0U;
-         sy < source_height;
-         sy++)
+    if (0U !=
+        ((uintptr_t) source & 0x3FU))
     {
-        const uint8_t * source_row =
-            source +
-            (sy *
-             source_width *
-             VIDEO_SOURCE_BYTES_PER_PIXEL);
-
-        uint32_t * destination_row =
-            (uint32_t *)
-            (framebuffer +
-             ((offset_y + sy) *
-              DISPLAY_BUFFER_STRIDE_BYTES_INPUT0));
-
-        destination_row += offset_x;
-
-
-        for (uint32_t sx = 0U;
-             sx < source_width;
-             sx++)
-        {
-            uint32_t source_index =
-                sx *
-                VIDEO_SOURCE_BYTES_PER_PIXEL;
-
-            uint32_t red =
-                source_row[source_index + 0U];
-
-            uint32_t green =
-                source_row[source_index + 1U];
-
-            uint32_t blue =
-                source_row[source_index + 2U];
-
-            destination_row[sx] =
-                (red << 16) |
-                (green << 8) |
-                blue;
-        }
-
-
-        /*
-         * Cortex-M85 uses write-back D-cache.
-         *
-         * GLCDC reads SDRAM directly, so clean only
-         * the part of this row that was modified.
-         */
-        SCB_CleanDCache_by_Addr(
-            destination_row,
-            (int32_t)
-            (source_width *
-             sizeof(uint32_t))
+        tm_printf(
+            (UB *)"[Display] framebuffer not 64-byte aligned: 0x%08X\n",
+            (uint32_t) (uintptr_t) source
         );
+
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
     }
 
 
     /*
-     * Ensure cache maintenance has completed before
-     * transferring ownership to GLCDC.
-     */
-    __DSB();
-
-
-    /*
-     * Request GLCDC to display this framebuffer.
+     * No pixel conversion.
+     * No CPU framebuffer copy.
+     *
+     * The RGB565 SDRAM frame received from USB DMA
+     * becomes the GLCDC input framebuffer itself.
      */
     for (uint32_t retry = 0U;
          retry < GLCDC_BUFFER_CHANGE_RETRY_MAX;
          retry++)
     {
-        err = R_GLCDC_BufferChange(
-            &g_display0_ctrl,
-            framebuffer,
-            DISPLAY_FRAME_LAYER_1
-        );
+        err =
+            R_GLCDC_BufferChange(
+                &g_display0_ctrl,
+                (uint8_t *) source,
+                DISPLAY_FRAME_LAYER_1
+            );
+
 
         if (FSP_SUCCESS == err)
         {
             break;
         }
 
-        if (FSP_ERR_INVALID_UPDATE_TIMING != err)
+
+        if (FSP_ERR_INVALID_UPDATE_TIMING !=
+            err)
         {
             break;
         }
 
-        R_BSP_SoftwareDelay(
-            1U,
-            BSP_DELAY_UNITS_MILLISECONDS
-        );
+
+        /*
+        * Yield CPU while waiting for the next
+        * GLCDC update window.
+        *
+        * This allows the lower-priority USB task
+        * to continue filling the free SDRAM buffer.
+        */
+        tk_dly_tsk(1);
     }
 
 
     if (FSP_SUCCESS != err)
     {
         tm_printf(
-            (UB *)"[Display] R_GLCDC_BufferChange failed: "
-                   "fsp_err=%d\n",
+            (UB *)"[Display] R_GLCDC_BufferChange failed: fsp_err=%d\n",
             err
         );
 
-        return DISPLAY_DRIVER_ERROR_BUFFER_CHANGE;
+        return
+            DISPLAY_DRIVER_ERROR_BUFFER_CHANGE;
+    }
+
+
+    return DISPLAY_DRIVER_OK;
+}
+
+
+uint8_t display_driver_release_pending(void)
+{
+    __DMB();
+
+    return s_pending_release_armed;
+}
+
+
+uint8_t display_driver_arm_release(
+    uint32_t slot)
+{
+    if (slot >= VIDEO_SOURCE_BUFFER_COUNT)
+    {
+        return 0U;
     }
 
 
     /*
-     * The submitted buffer becomes the front buffer.
-     * Use the other GLCDC buffer for the next frame.
+     * There must never be two unreleased GLCDC
+     * framebuffers at the same time.
      */
-    s_video_back_buffer ^= 1U;
+    if (0U != s_pending_release_armed)
+    {
+        return 0U;
+    }
 
-    return DISPLAY_DRIVER_OK;
+
+    s_pending_release_slot =
+        slot;
+
+    __DMB();
+
+    s_pending_release_armed = 1U;
+
+    __DMB();
+
+
+    return 1U;
 }

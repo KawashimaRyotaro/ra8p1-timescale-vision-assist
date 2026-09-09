@@ -26,11 +26,16 @@ display_driver_status_t display_driver_fill(
 
 display_driver_status_t display_driver_backlight_on(void);
 
-display_driver_status_t display_driver_present_rgb888(
+display_driver_status_t display_driver_present_rgb565(
     const uint8_t * source,
     uint32_t source_width,
     uint32_t source_height
 );
 
+uint8_t display_driver_release_pending(void);
+
+uint8_t display_driver_arm_release(
+    uint32_t slot
+);
 
 #endif /* DISPLAY_DRIVER_H */

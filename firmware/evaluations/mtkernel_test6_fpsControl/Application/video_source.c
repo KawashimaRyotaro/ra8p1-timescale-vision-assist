@@ -15,62 +15,40 @@ typedef enum
 } video_source_buffer_state_t;
 
 
-typedef struct
-{
-    volatile video_source_buffer_state_t state;
-    uint32_t frame_index;
-
-} video_source_buffer_meta_t;
-
-
 /*
- * Input video frame buffers.
+ * GLCDC requires framebuffer addresses to be aligned
+ * to a 64-byte boundary.
  *
- * Each buffer:
- *   640 x 480 x 3 bytes
- *   = 921600 bytes
- *
- * Two buffers:
- *   1843200 bytes
- *
- * These buffers are separate from the GLCDC framebuffers.
+ * VIDEO_SOURCE_FRAME_BYTES = 614400,
+ * which is also a multiple of 64 bytes.
  */
 static uint8_t s_frame_buffer
     [VIDEO_SOURCE_BUFFER_COUNT]
     [VIDEO_SOURCE_FRAME_BYTES]
-    __attribute__((section(".sdram_noinit"), aligned(32)));
+    __attribute__((section(".sdram_noinit"), aligned(64)));
 
 
-/*
- * Buffer state and frame number.
- *
- * The metadata itself is small, so it remains in normal internal RAM.
- */
-static video_source_buffer_meta_t
-    s_buffer_meta[VIDEO_SOURCE_BUFFER_COUNT];
+static volatile video_source_buffer_state_t
+    s_buffer_state[VIDEO_SOURCE_BUFFER_COUNT];
 
 
-/*
- * Slot selected for the next USB write.
- *
- * 0 -> 1 -> 0 -> 1 ...
- */
+static uint32_t
+    s_frame_index[VIDEO_SOURCE_BUFFER_COUNT];
+
+
 static uint32_t s_next_write_slot = 0U;
 
 
-/*
- * Initialize both SDRAM frame-buffer states.
- */
 void video_source_init(void)
 {
-    for (uint32_t i = 0U;
-         i < VIDEO_SOURCE_BUFFER_COUNT;
-         i++)
+    for (uint32_t slot = 0U;
+         slot < VIDEO_SOURCE_BUFFER_COUNT;
+         slot++)
     {
-        s_buffer_meta[i].state =
+        s_buffer_state[slot] =
             VIDEO_SOURCE_BUFFER_EMPTY;
 
-        s_buffer_meta[i].frame_index = 0U;
+        s_frame_index[slot] = 0U;
     }
 
     s_next_write_slot = 0U;
@@ -79,15 +57,6 @@ void video_source_init(void)
 }
 
 
-/*
- * USB producer:
- *
- * Obtain the next empty SDRAM frame buffer.
- *
- * Return:
- *   buffer pointer : writable buffer available
- *   NULL           : next buffer is still in use
- */
 uint8_t * video_source_acquire_write_buffer(
     uint32_t * slot)
 {
@@ -96,31 +65,43 @@ uint8_t * video_source_acquire_write_buffer(
         return NULL;
     }
 
-    uint32_t candidate =
-        s_next_write_slot;
-
-    if (VIDEO_SOURCE_BUFFER_EMPTY !=
-        s_buffer_meta[candidate].state)
+    /*
+     * Search all three buffers.
+     *
+     * Do not wait only for one predetermined slot:
+     * Difference/Display can intentionally keep one buffer
+     * in READING state as the previous frame.
+     */
+    for (uint32_t offset = 0U;
+         offset < VIDEO_SOURCE_BUFFER_COUNT;
+         offset++)
     {
-        return NULL;
+        uint32_t candidate =
+            (s_next_write_slot + offset) %
+            VIDEO_SOURCE_BUFFER_COUNT;
+
+        if (VIDEO_SOURCE_BUFFER_EMPTY ==
+            s_buffer_state[candidate])
+        {
+            s_buffer_state[candidate] =
+                VIDEO_SOURCE_BUFFER_WRITING;
+
+            __DMB();
+
+            *slot = candidate;
+
+            s_next_write_slot =
+                (candidate + 1U) %
+                VIDEO_SOURCE_BUFFER_COUNT;
+
+            return s_frame_buffer[candidate];
+        }
     }
 
-    s_buffer_meta[candidate].state =
-        VIDEO_SOURCE_BUFFER_WRITING;
-
-    __DMB();
-
-    *slot = candidate;
-
-    return s_frame_buffer[candidate];
+    return NULL;
 }
 
 
-/*
- * USB producer:
- *
- * Publish a completely written frame to the display task.
- */
 void video_source_publish_write_buffer(
     uint32_t slot,
     uint32_t frame_index)
@@ -131,35 +112,22 @@ void video_source_publish_write_buffer(
     }
 
     if (VIDEO_SOURCE_BUFFER_WRITING !=
-        s_buffer_meta[slot].state)
+        s_buffer_state[slot])
     {
         return;
     }
 
-    s_buffer_meta[slot].frame_index =
-        frame_index;
+    s_frame_index[slot] = frame_index;
 
-    /*
-     * Complete all frame writes before making the frame READY.
-     */
     __DMB();
 
-    s_buffer_meta[slot].state =
+    s_buffer_state[slot] =
         VIDEO_SOURCE_BUFFER_READY;
 
     __DMB();
-
-    s_next_write_slot =
-        (slot + 1U) %
-        VIDEO_SOURCE_BUFFER_COUNT;
 }
 
 
-/*
- * USB producer:
- *
- * Return a buffer to EMPTY if ff_fread() failed before publishing it.
- */
 void video_source_cancel_write_buffer(
     uint32_t slot)
 {
@@ -169,9 +137,11 @@ void video_source_cancel_write_buffer(
     }
 
     if (VIDEO_SOURCE_BUFFER_WRITING ==
-        s_buffer_meta[slot].state)
+        s_buffer_state[slot])
     {
-        s_buffer_meta[slot].state =
+        __DMB();
+
+        s_buffer_state[slot] =
             VIDEO_SOURCE_BUFFER_EMPTY;
 
         __DMB();
@@ -179,15 +149,6 @@ void video_source_cancel_write_buffer(
 }
 
 
-/*
- * Display consumer:
- *
- * Obtain the oldest READY frame.
- *
- * Return:
- *   buffer pointer : READY frame available
- *   NULL           : no complete frame available
- */
 const uint8_t * video_source_acquire_read_buffer(
     uint32_t * slot,
     uint32_t * frame_index)
@@ -199,39 +160,43 @@ const uint8_t * video_source_acquire_read_buffer(
     }
 
     uint32_t selected_slot =
-        VIDEO_SOURCE_BUFFER_COUNT;
+        VIDEO_SOURCE_INVALID_SLOT;
 
     uint32_t selected_frame =
         UINT32_MAX;
 
-    /*
-     * Usually only one frame is READY.
-     *
-     * If both are READY, select the older one.
-     */
-    for (uint32_t i = 0U;
-         i < VIDEO_SOURCE_BUFFER_COUNT;
-         i++)
-    {
-        if ((VIDEO_SOURCE_BUFFER_READY ==
-             s_buffer_meta[i].state) &&
-            (s_buffer_meta[i].frame_index <
-             selected_frame))
-        {
-            selected_slot = i;
 
-            selected_frame =
-                s_buffer_meta[i].frame_index;
+    /*
+     * Consume the oldest READY frame.
+     */
+    for (uint32_t candidate = 0U;
+         candidate < VIDEO_SOURCE_BUFFER_COUNT;
+         candidate++)
+    {
+        if (VIDEO_SOURCE_BUFFER_READY ==
+            s_buffer_state[candidate])
+        {
+            if (s_frame_index[candidate] <
+                selected_frame)
+            {
+                selected_frame =
+                    s_frame_index[candidate];
+
+                selected_slot =
+                    candidate;
+            }
         }
     }
 
-    if (selected_slot >=
-        VIDEO_SOURCE_BUFFER_COUNT)
+
+    if (VIDEO_SOURCE_INVALID_SLOT ==
+        selected_slot)
     {
         return NULL;
     }
 
-    s_buffer_meta[selected_slot].state =
+
+    s_buffer_state[selected_slot] =
         VIDEO_SOURCE_BUFFER_READING;
 
     __DMB();
@@ -243,11 +208,6 @@ const uint8_t * video_source_acquire_read_buffer(
 }
 
 
-/*
- * Display consumer:
- *
- * Release a frame after its pixels have been copied to a GLCDC buffer.
- */
 void video_source_release_read_buffer(
     uint32_t slot)
 {
@@ -257,11 +217,11 @@ void video_source_release_read_buffer(
     }
 
     if (VIDEO_SOURCE_BUFFER_READING ==
-        s_buffer_meta[slot].state)
+        s_buffer_state[slot])
     {
         __DMB();
 
-        s_buffer_meta[slot].state =
+        s_buffer_state[slot] =
             VIDEO_SOURCE_BUFFER_EMPTY;
 
         __DMB();

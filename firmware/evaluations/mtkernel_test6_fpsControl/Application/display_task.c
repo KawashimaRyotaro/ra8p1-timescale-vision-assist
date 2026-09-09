@@ -1,9 +1,26 @@
+#include <stddef.h>
+#include <stdint.h>
+
 #include <tk/tkernel.h>
 #include <tm/tmonitor.h>
 
 #include "display_task.h"
 #include "display_driver.h"
 #include "video_source.h"
+#include "frame_difference.h"
+#include "fps_control.h"
+
+
+/*
+ * Frame Difference switch.
+ *
+ * Uncomment:
+ *     Difference ON
+ *
+ * Comment out:
+ *     Difference OFF
+ */
+// #define DISPLAY_TASK_ENABLE_FRAME_DIFFERENCE
 
 
 /*
@@ -139,43 +156,239 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
     );
 
 
+    /*
+    * First measurement:
+    *
+    * 0 = unlimited.
+    *
+    * Do not limit the current USB -> SDRAM -> Display path.
+    */
+    fps_control_init(
+        FPS_CONTROL_UNLIMITED
+    );
+
+    /*
+     * Keep the previous frame until the next frame arrives.
+     *
+     * These variables must be outside the while loop because
+     * Difference compares frame[n - 1] with frame[n].
+     */
+    uint32_t previous_slot =
+        VIDEO_SOURCE_INVALID_SLOT;
+
+
+#ifdef DISPLAY_TASK_ENABLE_FRAME_DIFFERENCE
+
+    uint32_t previous_frame_index =
+        UINT32_MAX;
+
+    const uint8_t * previous_frame =
+    NULL;
+
+#endif
+
+
     while (1)
     {
-        uint32_t slot = 0U;
+        fps_control_wait_before_frame();
+
+
+        uint32_t current_slot =
+            VIDEO_SOURCE_INVALID_SLOT;
+
         uint32_t frame_index = 0U;
 
-        const uint8_t * frame =
+
+        const uint8_t * current_frame =
             video_source_acquire_read_buffer(
-                &slot,
+                &current_slot,
                 &frame_index
             );
 
-        if (NULL == frame)
+
+        if (NULL == current_frame)
         {
             tk_dly_tsk(1);
             continue;
         }
 
 
+        /*
+        * Difference is valid only for consecutive frames
+        * belonging to the same video stream.
+        *
+        * frame_index == 0 indicates a new stream.
+        */
+        #ifdef DISPLAY_TASK_ENABLE_FRAME_DIFFERENCE
+
+        uint8_t difference_valid = 0U;
+
+        frame_difference_result_t
+            difference_result =
+            {
+                .sample_count = 0U,
+                .mean_abs_luma_x1000 = 0U
+            };
+
+
+        if ((NULL != previous_frame) &&
+            (0U != frame_index) &&
+            ((previous_frame_index + 1U) ==
+            frame_index))
+        {
+            difference_valid =
+                frame_difference_compute_rgb565(
+                    previous_frame,
+                    current_frame,
+                    VIDEO_SOURCE_WIDTH,
+                    VIDEO_SOURCE_HEIGHT,
+                    &difference_result
+                );
+        }
+
+
+        /*
+        * Minimal debug output.
+        */
+        if ((0U != difference_valid) &&
+            ((1U == frame_index) ||
+            (0U == (frame_index % 100U)) ||
+            (299U == frame_index)))
+        {
+            tm_printf(
+                (UB *)"[Diff] "
+                    "frame=%u "
+                    "samples=%u "
+                    "mad=%u.%03u\n",
+                frame_index,
+                difference_result.sample_count,
+                difference_result.mean_abs_luma_x1000 /
+                    1000U,
+                difference_result.mean_abs_luma_x1000 %
+                    1000U
+            );
+        }
+
+        /*
+        * Minimal debug output.
+        *
+        * Do not print every frame because serial logging
+        * itself would disturb FPS measurement.
+        */
+        if ((0U != difference_valid) &&
+            ((1U == frame_index) ||
+            (0U == (frame_index % 100U)) ||
+            (299U == frame_index)))
+        {
+            tm_printf(
+                (UB *)"[Diff] "
+                    "frame=%u "
+                    "samples=%u "
+                    "mad=%u.%03u\n",
+                frame_index,
+                difference_result.sample_count,
+                difference_result.mean_abs_luma_x1000 /
+                    1000U,
+                difference_result.mean_abs_luma_x1000 %
+                    1000U
+            );
+        }
+
+        #endif
+
+
+        while (0U !=
+            display_driver_release_pending())
+        {
+            tk_dly_tsk(1);
+        }
+
+
+        fps_control_display_begin(
+            frame_index
+        );
+
+
         status =
-            display_driver_present_rgb888(
-                frame,
+            display_driver_present_rgb565(
+                current_frame,
                 VIDEO_SOURCE_WIDTH,
                 VIDEO_SOURCE_HEIGHT
             );
 
 
-        video_source_release_read_buffer(
-            slot
-        );
+        fps_control_display_end();
 
 
-        if (DISPLAY_DRIVER_OK != status)
+        if (DISPLAY_DRIVER_OK ==
+            status)
         {
-            tm_printf(
-                (UB *)"ERROR: video display = %d frame=%u\n",
-                status,
+            /*
+            * Do NOT release previous_slot here.
+            *
+            * GLCDC may still be scanning it.
+            *
+            * Arm it for release by the next
+            * LINE_DETECTION interrupt instead.
+            */
+            if (VIDEO_SOURCE_INVALID_SLOT !=
+                previous_slot)
+            {
+                if (0U ==
+                    display_driver_arm_release(
+                        previous_slot
+                    ))
+                {
+                    tm_putstring(
+                        (UB *)"[Display] "
+                            "failed to arm buffer release.\n"
+                    );
+
+                    video_source_release_read_buffer(
+                        current_slot
+                    );
+
+                    tk_ext_tsk();
+                    return;
+                }
+            }
+
+
+            /*
+            * Current frame becomes:
+            *
+            * 1. GLCDC framebuffer
+            * 2. previous frame for next Difference
+            */
+            previous_slot =
+                current_slot;
+
+
+            #ifdef DISPLAY_TASK_ENABLE_FRAME_DIFFERENCE
+
+            previous_frame =
+                current_frame;
+
+            previous_frame_index =
+                frame_index;
+
+            #endif
+
+
+            fps_control_frame_presented(
                 frame_index
+            );
+        }
+        else
+        {
+            video_source_release_read_buffer(
+                current_slot
+            );
+
+
+            tm_printf(
+                (UB *)"[Display] present failed: %d\n",
+                status
             );
         }
     }

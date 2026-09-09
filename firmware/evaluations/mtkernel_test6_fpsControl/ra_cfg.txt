@@ -66,7 +66,7 @@ FSP Configuration
     Clocks: MSTP Change Delays: Enabled
     Clocks: Settling Delay (us): 30
     Main Oscillator Wait Time: 8163 cycles
-    Cache settings: Data cache: Enabled
+    Cache settings: Data cache: Disabled
     Cache settings: Data cache forced write-through: Disabled
     I/O Ports: Voltage Mode: VCC: High (VCC >= 2.7 V)
     I/O Ports: Voltage Mode: VCC2: High (VCC2 >= 2.7 V)
@@ -963,7 +963,7 @@ FSP Configuration
     Double Buffering: Enabled
     Continuous Transfer Mode: Disabled
     LDO Regulator: Not Supported
-    DMA/DTC Support: DMA Disabled
+    DMA/DTC Support: DMA Enabled
     USB Multiport Enable: Disabled
     USB Compliance Test mode: Disabled
     USB TPL table name: NULL
@@ -1779,19 +1779,19 @@ FSP Configuration
       
     Instance "g_display0 Graphics LCD (r_glcdc)"
       General: Name: g_display0
-      Interrupts: Callback Function: NULL
+      Interrupts: Callback Function: display_driver_callback
       Interrupts: Line Detect Interrupt Priority: Priority 12
       Interrupts: Underflow 1 Interrupt Priority: Disabled
       Interrupts: Underflow 2 Interrupt Priority: Disabled
       Input: Graphics Layer 1: General: Enabled: Yes
-      Input: Graphics Layer 1: General: Horizontal size: 1024
-      Input: Graphics Layer 1: General: Vertical size: 600
-      Input: Graphics Layer 1: General: Horizontal position: 0
-      Input: Graphics Layer 1: General: Vertical position: 0
+      Input: Graphics Layer 1: General: Horizontal size: 640
+      Input: Graphics Layer 1: General: Vertical size: 480
+      Input: Graphics Layer 1: General: Horizontal position: 192
+      Input: Graphics Layer 1: General: Vertical position: 60
       Input: Graphics Layer 1: Framebuffer: Framebuffer name: fb_background
       Input: Graphics Layer 1: Framebuffer: Number of framebuffers: 2
       Input: Graphics Layer 1: Framebuffer: Section for framebuffer allocation: .sdram_noinit
-      Input: Graphics Layer 1: General: Color format: RGB888 (32-bit)
+      Input: Graphics Layer 1: General: Color format: RGB565 (16-bit)
       Input: Graphics Layer 1: General: Line descending mode: Disabled
       Input: Graphics Layer 1: Line Repeat: Enable: Off
       Input: Graphics Layer 1: Line Repeat: Repeat count: 0
@@ -2028,7 +2028,7 @@ FSP Configuration
       
       Instance "g_transfer0 Transfer (r_dmac) No ELC Trigger"
         Name: g_transfer0
-        Channel: 0
+        Channel: 2
         Mode: Block
         Transfer Size: 1 Byte
         Destination Address Mode: Incremented
@@ -2079,3 +2079,37 @@ FSP Configuration
               USB Callback: rm_block_media_usb_callback
               USB Callback Context: g_rm_block_media0_ctrl
               
+              Instance "g_transfer1 Transfer (r_dmac) USBHS FIFO 1 (DMA transfer request 1)"
+                Name: g_transfer1
+                Channel: 0
+                Mode: Block
+                Transfer Size: 4 Bytes
+                Destination Address Mode: Fixed
+                Source Address Mode: Incremented
+                Repeat Area (Unused in Normal Mode): Destination
+                Number of Transfers: 0
+                Number of Blocks (Valid only in Repeat,Block or Repeat-Block Mode): 0
+                Activation Source: USBHS FIFO 1 (DMA transfer request 1)
+                Callback: usb_ip1_d1fifo_callback
+                Transfer End Interrupt Priority: Priority 3
+                Interrupt Frequency: Interrupt after all transfers have completed
+                Offset value (Valid only when address mode is Offset addition): 0
+                Source Buffer Size: 1
+                
+              Instance "g_transfer2 Transfer (r_dmac) USBHS FIFO 0 (DMA transfer request 0)"
+                Name: g_transfer2
+                Channel: 1
+                Mode: Block
+                Transfer Size: 4 Bytes
+                Destination Address Mode: Incremented
+                Source Address Mode: Fixed
+                Repeat Area (Unused in Normal Mode): Source
+                Number of Transfers: 0
+                Number of Blocks (Valid only in Repeat,Block or Repeat-Block Mode): 0
+                Activation Source: USBHS FIFO 0 (DMA transfer request 0)
+                Callback: NULL
+                Transfer End Interrupt Priority: Priority 3
+                Interrupt Frequency: Interrupt after all transfers have completed
+                Offset value (Valid only when address mode is Offset addition): 0
+                Source Buffer Size: 1
+                

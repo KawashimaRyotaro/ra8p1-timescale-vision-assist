@@ -4,15 +4,37 @@
 #include "hal_data.h"
 #include "usb_loader.h"
 #include "video_source.h"
+#include "fps_control.h"
 
 
-#define USB_LOADER_TASK_PRIORITY      (32)
+#define USB_LOADER_TASK_PRIORITY      (11)
 #define USB_LOADER_TASK_STACK_SIZE    (4096)
 #define USB_LOADER_PARTITION_NUMBER   (0U)
 
 #define USB_LOADER_SELECT_PATH        "/SELECT.TXT"
 
 #define USB_LOADER_MAX_VIDEO_INDEX    (999U)
+#define USB_LOADER_MAX_TARGET_FPS     (120U)
+
+/*
+ * Raw USB block-media benchmark.
+ *
+ * 640 x 480 x 3 bytes = 921600 bytes
+ * 921600 / 512 = 1800 sectors
+ */
+#define USB_BENCHMARK_BLOCK_SIZE_BYTES    (512U)
+#define USB_BENCHMARK_BLOCK_SIZE_BYTES (512U)
+
+#define USB_BENCHMARK_BLOCKS_PER_FRAME \
+    (VIDEO_SOURCE_FRAME_BYTES / \
+     USB_BENCHMARK_BLOCK_SIZE_BYTES)
+#define USB_BENCHMARK_FRAME_COUNT         (300U)
+
+/*
+ * Read-only test area.
+ * No data is written to the USB device.
+ */
+#define USB_BENCHMARK_START_BLOCK         (2048U)
 
 
 LOCAL ID s_usb_loader_task_id = 0;
@@ -42,8 +64,9 @@ LOCAL T_CTSK s_usb_loader_task_ctsk =
     .stksz   = USB_LOADER_TASK_STACK_SIZE,
 };
 
-LOCAL uint8_t usb_loader_read_selection(
-    uint32_t * selected_index
+LOCAL uint8_t usb_loader_read_config(
+    uint32_t * selected_index,
+    uint32_t * target_fps
 );
 
 LOCAL void usb_loader_make_video_path(
@@ -56,6 +79,8 @@ LOCAL size_t usb_loader_read_exact(
     uint8_t * destination,
     size_t bytes_to_read
 );
+
+LOCAL void usb_loader_run_raw_benchmark(void);
 
 LOCAL void usb_loader_stream_selected_video(void);
 
@@ -140,10 +165,24 @@ LOCAL fsp_err_t usb_loader_mount(
         s_usb_device.sector_size_bytes
     );
 
+
+    /*
+    * Measure raw USB/HMSC -> SDRAM throughput
+    * before FreeRTOS+FAT filesystem processing.
+    */
+    tm_putstring(
+        (UB *)"[USB-Bench] raw block-media test start.\n"
+    );
+
+    usb_loader_run_raw_benchmark();
+
+    tm_putstring(
+        (UB *)"[USB-Bench] raw block-media test end.\n"
+    );
+
+
     /*
     * The USB device capacity is determined at runtime.
-    * Update the generated FAT disk configuration with the
-    * actual media information before creating the disk.
     */
     g_rm_freertos_plus_fat0_disk_cfg.device.sector_count =
         s_usb_device.sector_count;
@@ -406,13 +445,16 @@ LOCAL void usb_loader_task_entry(INT stacd, void *exinf)
 }
 
 
-LOCAL uint8_t usb_loader_read_selection(
-    uint32_t * selected_index)
+LOCAL uint8_t usb_loader_read_config(
+    uint32_t * selected_index,
+    uint32_t * target_fps)
 {
-    if (NULL == selected_index)
+    if ((NULL == selected_index) ||
+        (NULL == target_fps))
     {
         return 0U;
     }
+
 
     FF_FILE * file =
         ff_fopen(
@@ -429,17 +471,19 @@ LOCAL uint8_t usb_loader_read_selection(
         return 0U;
     }
 
-    uint8_t buffer[8] = {0U};
+
+    uint8_t buffer[32] = {0U};
 
     size_t read_size =
         ff_fread(
             buffer,
             1U,
-            sizeof(buffer),
+            sizeof(buffer) - 1U,
             file
         );
 
     (void) ff_fclose(file);
+
 
     if (0U == read_size)
     {
@@ -451,22 +495,57 @@ LOCAL uint8_t usb_loader_read_selection(
     }
 
 
-    uint32_t value = 0U;
+    /*
+     * Format:
+     *
+     * line 1 : video index
+     * line 2 : target FPS
+     *
+     * Example:
+     *
+     * 10
+     * 30
+     */
+    uint32_t values[2] =
+    {
+        0U,
+        0U
+    };
+
+    uint32_t value_index = 0U;
     uint32_t digits = 0U;
 
-    for (size_t i = 0U; i < read_size; i++)
+
+    for (size_t i = 0U;
+         (i < read_size) &&
+         (value_index < 2U);
+         i++)
     {
         uint8_t c = buffer[i];
 
-        if ((c == (uint8_t) '\r') ||
-            (c == (uint8_t) '\n') ||
-            (c == (uint8_t) ' '))
-        {
-            break;
-        }
 
-        if ((c < (uint8_t) '0') ||
-            (c > (uint8_t) '9'))
+        if ((c >= (uint8_t) '0') &&
+            (c <= (uint8_t) '9'))
+        {
+            values[value_index] =
+                (values[value_index] * 10U) +
+                (uint32_t)
+                (c - (uint8_t) '0');
+
+            digits++;
+        }
+        else if ((c == (uint8_t) '\r') ||
+                 (c == (uint8_t) '\n') ||
+                 (c == (uint8_t) ' ')  ||
+                 (c == (uint8_t) '\t'))
+        {
+            if (0U != digits)
+            {
+                value_index++;
+                digits = 0U;
+            }
+        }
+        else
         {
             tm_putstring(
                 (UB *)"[Dataset] invalid SELECT.TXT.\n"
@@ -474,29 +553,59 @@ LOCAL uint8_t usb_loader_read_selection(
 
             return 0U;
         }
-
-        value =
-            (value * 10U) +
-            (uint32_t) (c - (uint8_t) '0');
-
-        digits++;
-
-        if (value > USB_LOADER_MAX_VIDEO_INDEX)
-        {
-            tm_putstring(
-                (UB *)"[Dataset] selected index too large.\n"
-            );
-
-            return 0U;
-        }
     }
 
-    if (0U == digits)
+
+    /*
+     * Account for the final number if the file does
+     * not end with a newline.
+     */
+    if ((0U != digits) &&
+        (value_index < 2U))
     {
+        value_index++;
+    }
+
+
+    if (2U != value_index)
+    {
+        tm_putstring(
+            (UB *)"[Dataset] SELECT.TXT requires "
+                   "video index and FPS.\n"
+        );
+
         return 0U;
     }
 
-    *selected_index = value;
+
+    if (values[0] >
+        USB_LOADER_MAX_VIDEO_INDEX)
+    {
+        tm_putstring(
+            (UB *)"[Dataset] selected index too large.\n"
+        );
+
+        return 0U;
+    }
+
+
+    if (values[1] >
+        USB_LOADER_MAX_TARGET_FPS)
+    {
+        tm_putstring(
+            (UB *)"[FPS] target FPS too large.\n"
+        );
+
+        return 0U;
+    }
+
+
+    *selected_index =
+        values[0];
+
+    *target_fps =
+        values[1];
+
 
     return 1U;
 }
@@ -507,7 +616,7 @@ LOCAL void usb_loader_make_video_path(
     char path[12])
 {
     /*
-     * "/VID000.RAW"
+     * "/VID000.R56"
      *
      * 11 characters + '\0'
      */
@@ -527,8 +636,8 @@ LOCAL void usb_loader_make_video_path(
 
     path[7]  = '.';
     path[8]  = 'R';
-    path[9]  = 'A';
-    path[10] = 'W';
+    path[9]  = '5';
+    path[10] = '6';
     path[11] = '\0';
 }
 
@@ -570,16 +679,185 @@ LOCAL size_t usb_loader_read_exact(
 }
 
 
-LOCAL void usb_loader_stream_selected_video(void)
+LOCAL void usb_loader_run_raw_benchmark(void)
 {
-    uint32_t selected_index = 0U;
+    uint32_t slot = 0U;
 
-    if (0U ==
-        usb_loader_read_selection(
-            &selected_index))
+    uint8_t * buffer =
+        video_source_acquire_write_buffer(
+            &slot
+        );
+
+    if (NULL == buffer)
+    {
+        tm_putstring(
+            (UB *)"[USB-Bench] no SDRAM buffer available.\n"
+        );
+
+        return;
+    }
+
+
+    SYSTIM start_time;
+    SYSTIM end_time;
+
+    ER time_err =
+        tk_get_otm(
+            &start_time
+        );
+
+    if (time_err < E_OK)
+    {
+        video_source_cancel_write_buffer(
+            slot
+        );
+
+        tm_putstring(
+            (UB *)"[USB-Bench] tk_get_otm start failed.\n"
+        );
+
+        return;
+    }
+
+
+    uint32_t completed = 0U;
+
+    for (uint32_t i = 0U;
+         i < USB_BENCHMARK_FRAME_COUNT;
+         i++)
+    {
+        uint32_t block_address =
+            USB_BENCHMARK_START_BLOCK +
+            (i * USB_BENCHMARK_BLOCKS_PER_FRAME);
+
+        fsp_err_t err =
+            g_rm_block_media0.p_api->read(
+                g_rm_block_media0.p_ctrl,
+                buffer,
+                block_address,
+                USB_BENCHMARK_BLOCKS_PER_FRAME
+            );
+
+        if (FSP_SUCCESS != err)
+        {
+            tm_printf(
+                (UB *)"[USB-Bench] read failed: "
+                       "index=%u block=%u err=%d\n",
+                i,
+                block_address,
+                err
+            );
+
+            break;
+        }
+
+        completed++;
+    }
+
+
+    time_err =
+        tk_get_otm(
+            &end_time
+        );
+
+
+    video_source_cancel_write_buffer(
+        slot
+    );
+
+
+    if (time_err < E_OK)
+    {
+        tm_putstring(
+            (UB *)"[USB-Bench] tk_get_otm end failed.\n"
+        );
+
+        return;
+    }
+
+
+    uint64_t start_ms =
+        ((uint64_t) (uint32_t) start_time.hi << 32) |
+        start_time.lo;
+
+    uint64_t end_ms =
+        ((uint64_t) (uint32_t) end_time.hi << 32) |
+        end_time.lo;
+
+    uint64_t elapsed_ms =
+        end_ms - start_ms;
+
+
+    if ((0U == completed) ||
+        (0U == elapsed_ms))
     {
         return;
     }
+
+
+    uint64_t total_bytes =
+        (uint64_t) completed *
+        USB_BENCHMARK_BLOCKS_PER_FRAME *
+        USB_BENCHMARK_BLOCK_SIZE_BYTES;
+
+
+    /*
+     * MB/s x 1000.
+     */
+    uint32_t mbps_x1000 =
+        (uint32_t)
+        (
+            (total_bytes * 1000ULL) /
+            elapsed_ms /
+            1000ULL
+        );
+
+
+    tm_printf(
+        (UB *)"[USB-Bench] "
+               "frames=%u "
+               "bytes=%u "
+               "elapsed_ms=%u "
+               "MBps=%u.%03u\n",
+        completed,
+        (uint32_t) total_bytes,
+        (uint32_t) elapsed_ms,
+        mbps_x1000 / 1000U,
+        mbps_x1000 % 1000U
+    );
+}
+
+
+LOCAL void usb_loader_stream_selected_video(void)
+{
+    uint32_t selected_index = 0U;
+    uint32_t target_fps = 0U;
+
+
+    if (0U ==
+        usb_loader_read_config(
+            &selected_index,
+            &target_fps))
+    {
+        return;
+    }
+
+
+    /*
+     * Apply the requested FPS before streaming
+     * starts.
+     *
+     * 0 means unlimited.
+     */
+    fps_control_set_target_fps(
+        target_fps
+    );
+
+
+    tm_printf(
+        (UB *)"[FPS] configured from SELECT.TXT: %u\n",
+        target_fps
+    );
 
 
     char path[12];
@@ -716,12 +994,18 @@ LOCAL void usb_loader_stream_selected_video(void)
          *
          * No 4 KiB staging buffer and no whole-file CRC.
          */
+        fps_control_usb_read_begin(
+            frame_index
+        );
+
         size_t read_size =
             usb_loader_read_exact(
                 file,
                 frame_buffer,
                 VIDEO_SOURCE_FRAME_BYTES
             );
+
+        fps_control_usb_read_end();
 
 
         if (VIDEO_SOURCE_FRAME_BYTES !=

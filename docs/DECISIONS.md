@@ -70,3 +70,32 @@ GVS（Galvanic Vestibular Stimulation）は、電気前庭刺激を意味しま�
 MIPI CSI-2は、カメラ画像を高速な直列信号で送る規格です。Renesasの公式例と
 付属OV5640の構成に合い、EK-RA8P1実機で1024×600のライブ映像表示を確認しました。
 最終システムでも採用するかは、遅延とメモリ帯域の測定後に決めます。
+
+## D011 USB replayはCamera Frame Cache境界を再現する
+
+状態：採用
+
+USB replayはpreprocess済みAI tensorを供給するのではなく、Camera/VINがFrame Cacheへ
+書き込む画像と同じ形式・stride・byte order・frame sizeを再現します。
+CameraとUSBはFrame Cache以降で同一のprocessing pipelineを使用します。
+
+## D012 Displayはdebug observerとし、提出版の処理パスから外す
+
+状態：採用
+
+最終出力はGVSとstereo/spatial audioです。LCD表示は認識結果確認のためのdebug observer
+としてのみ残し、性能評価と提出版では無効化します。Display完了待ちでRecognition pipelineを
+blockしません。
+
+## D013 Camera Frame Contractの第一実装はQVGA RGB565とする
+
+状態：評価中
+
+現行OV5640 + MIPI CSI + VINのRenesas例では、VINがYCbCr-422入力をRGB565へ変換し、
+QVGA 320×240をSDRAMへ出力できることが確認できます。VGA 640×480も利用可能です。
+したがってCamera/USB共通境界の第一実装は320×240 RGB565とします。
+
+224×168 RGB565はYOLOX 224×224入力に対してresizeを不要にできる有力候補ですが、
+現行Camera/VIN構成での実機出力をまだ確認していないため、現時点では固定しません。
+320×240共通パイプラインを完成後、VIN設定で224×168出力が安定動作するかを独立評価し、
+成功した場合のみCamera Frame Contractを置換します。

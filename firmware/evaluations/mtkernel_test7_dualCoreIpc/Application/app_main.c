@@ -14,7 +14,6 @@
 void npu_smoke_test(void);
 void npu_inference_test(void);
 void npu_worker_start(void);
-void yolo_fastest_cpu_smoke_test(void);
 
 
 EXPORT INT usermain(void)
@@ -37,16 +36,6 @@ EXPORT INT usermain(void)
 
     tm_putstring(
         (UB *)"[Video] SDRAM frame source initialized.\n"
-    );
-
-    tm_putstring(
-        (UB *)"[YOLO-Fastest] CPU smoke test start.\n"
-    );
-
-    yolo_fastest_cpu_smoke_test();
-
-    tm_putstring(
-        (UB *)"[YOLO-Fastest] CPU smoke test complete.\n"
     );
 
     /*

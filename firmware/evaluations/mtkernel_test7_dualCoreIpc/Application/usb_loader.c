@@ -1,5 +1,6 @@
 #include <tk/tkernel.h>
 #include <tm/tmonitor.h>
+#include <string.h>
 
 #include "hal_data.h"
 #include "usb_loader.h"
@@ -17,17 +18,18 @@
 #define USB_LOADER_MAX_TARGET_FPS     (120U)
 
 /*
- * Raw USB block-media benchmark.
+ * Raw USB benchmark uses the actual number of bytes
+ * stored for one tightly-packed .Y56 frame.
  *
- * 640 x 480 x 3 bytes = 921600 bytes
- * 921600 / 512 = 1800 sectors
+ * 224 x 168 x 2 = 75264 bytes
+ * 75264 / 512 = 147 sectors
  */
 #define USB_BENCHMARK_BLOCK_SIZE_BYTES    (512U)
-#define USB_BENCHMARK_BLOCK_SIZE_BYTES (512U)
 
 #define USB_BENCHMARK_BLOCKS_PER_FRAME \
-    (VIDEO_SOURCE_FRAME_BYTES / \
+    (VIDEO_SOURCE_FILE_FRAME_BYTES / \
      USB_BENCHMARK_BLOCK_SIZE_BYTES)
+
 #define USB_BENCHMARK_FRAME_COUNT         (300U)
 
 /*
@@ -635,7 +637,7 @@ LOCAL void usb_loader_make_video_path(
         (char) ('0' + (index % 10U));
 
     path[7]  = '.';
-    path[8]  = 'R';
+    path[8]  = 'Y';
     path[9]  = '5';
     path[10] = '6';
     path[11] = '\0';
@@ -920,20 +922,19 @@ LOCAL void usb_loader_stream_selected_video(void)
 
 
     /*
-     * RAW must contain an integer number of complete
-     * 640 x 480 x 3-byte frames.
-     */
+    * .Y56 contains tightly-packed 224 x 168 RGB565 frames.
+    */
     if ((file_size %
-         VIDEO_SOURCE_FRAME_BYTES) != 0U)
+        VIDEO_SOURCE_FILE_FRAME_BYTES) != 0U)
     {
         tm_printf(
-            (UB *)"[Dataset] invalid RAW size: "
-                   "bytes=%u frame_bytes=%u remainder=%u\n",
+            (UB *)"[Dataset] invalid Y56 size: "
+                "bytes=%u file_frame_bytes=%u remainder=%u\n",
             (uint32_t) file_size,
-            VIDEO_SOURCE_FRAME_BYTES,
+            VIDEO_SOURCE_FILE_FRAME_BYTES,
             (uint32_t)
             (file_size %
-             VIDEO_SOURCE_FRAME_BYTES)
+            VIDEO_SOURCE_FILE_FRAME_BYTES)
         );
 
         (void) ff_fclose(file);
@@ -945,14 +946,19 @@ LOCAL void usb_loader_stream_selected_video(void)
     uint32_t frame_count =
         (uint32_t)
         (file_size /
-         VIDEO_SOURCE_FRAME_BYTES);
+        VIDEO_SOURCE_FILE_FRAME_BYTES);
 
 
     tm_printf(
         (UB *)"[Dataset] streaming start: "
-               "frames=%u frame_bytes=%u\n",
+            "frames=%u "
+            "file_frame_bytes=%u "
+            "cache_frame_bytes=%u "
+            "stride=%u\n",
         frame_count,
-        VIDEO_SOURCE_FRAME_BYTES
+        VIDEO_SOURCE_FILE_FRAME_BYTES,
+        VIDEO_SOURCE_FRAME_BYTES,
+        VIDEO_SOURCE_STRIDE_BYTES
     );
 
 
@@ -989,11 +995,14 @@ LOCAL void usb_loader_stream_selected_video(void)
 
 
         /*
-         * Read exactly one video frame directly from FAT
-         * into the SDRAM input buffer.
-         *
-         * No 4 KiB staging buffer and no whole-file CRC.
-         */
+        * Read one tightly-packed 224 x 168 RGB565 frame.
+        *
+        * USB layout:
+        *   448 bytes/line x 168 lines
+        *
+        * First read it contiguously into the beginning of
+        * the Frame Cache buffer.
+        */
         fps_control_usb_read_begin(
             frame_index
         );
@@ -1002,38 +1011,69 @@ LOCAL void usb_loader_stream_selected_video(void)
             usb_loader_read_exact(
                 file,
                 frame_buffer,
-                VIDEO_SOURCE_FRAME_BYTES
+                VIDEO_SOURCE_FILE_FRAME_BYTES
             );
 
         fps_control_usb_read_end();
 
 
-        if (VIDEO_SOURCE_FRAME_BYTES !=
+        if (VIDEO_SOURCE_FILE_FRAME_BYTES !=
             read_size)
         {
             int fat_errno =
                 stdioGET_ERRNO();
 
-
-            /*
-             * This buffer never became a complete frame,
-             * so return it from WRITING to EMPTY.
-             */
             video_source_cancel_write_buffer(
                 slot
             );
 
-
             tm_printf(
                 (UB *)"[Dataset] frame read failed: "
-                       "frame=%u expected=%u actual=%u errno=%d\n",
+                    "frame=%u expected=%u actual=%u errno=%d\n",
                 frame_index,
-                VIDEO_SOURCE_FRAME_BYTES,
+                VIDEO_SOURCE_FILE_FRAME_BYTES,
                 (uint32_t) read_size,
                 fat_errno
             );
 
             break;
+        }
+
+
+        /*
+        * Expand the tightly-packed USB frame in-place
+        * to reproduce the VIN SDRAM layout.
+        *
+        * USB:
+        *   row y starts at y * 448
+        *
+        * VIN-compatible Frame Cache:
+        *   row y starts at y * 2048
+        *
+        * Move from the last row toward the first row so
+        * that expanding the layout cannot overwrite source
+        * rows which have not yet been moved.
+        */
+        for (uint32_t y = VIDEO_SOURCE_HEIGHT;
+            y > 1U;
+            y--)
+        {
+            uint32_t const row =
+                y - 1U;
+
+            uint8_t * destination =
+                frame_buffer +
+                (row * VIDEO_SOURCE_STRIDE_BYTES);
+
+            uint8_t * source =
+                frame_buffer +
+                (row * VIDEO_SOURCE_ACTIVE_LINE_BYTES);
+
+            memmove(
+                destination,
+                source,
+                VIDEO_SOURCE_ACTIVE_LINE_BYTES
+            );
         }
 
 

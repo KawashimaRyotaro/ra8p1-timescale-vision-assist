@@ -8,6 +8,8 @@
 #include "usb_loader.h"
 #include "ipc_test.h"
 
+#define APP_ENABLE_DEBUG_DISPLAY    (0U)
+
 
 void npu_smoke_test(void);
 void npu_inference_test(void);
@@ -39,6 +41,8 @@ EXPORT INT usermain(void)
     /*
      * Create application tasks.
      */
+    #if APP_ENABLE_DEBUG_DISPLAY
+
     err = display_task_create();
 
     if (err < E_OK)
@@ -50,6 +54,8 @@ EXPORT INT usermain(void)
 
         goto error;
     }
+
+    #endif
 
     err = usb_loader_create();
 
@@ -68,6 +74,8 @@ EXPORT INT usermain(void)
     /*
      * Start application tasks.
      */
+    #if APP_ENABLE_DEBUG_DISPLAY
+
     err = display_task_start();
 
     if (err < E_OK)
@@ -79,6 +87,8 @@ EXPORT INT usermain(void)
 
         goto error;
     }
+
+    #endif
 
     err = usb_loader_start();
 

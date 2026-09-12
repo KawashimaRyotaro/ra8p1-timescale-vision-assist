@@ -9,6 +9,7 @@
 #include "video_source.h"
 #include "frame_difference.h"
 #include "fps_control.h"
+#include "npu_worker.h"
 
 
 /*
@@ -187,6 +188,7 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
 
 #endif
 
+    video_source_display_consumer_enable();
 
     while (1)
     {
@@ -307,6 +309,70 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
         fps_control_display_begin(
             frame_index
         );
+
+
+        /*
+        * Wait for the NPU result corresponding to
+        * exactly this framebuffer.
+        *
+        * YOLOX currently takes about 320 ms,
+        * so allow up to 1000 ms.
+        */
+        const Detection_t * detections = NULL;
+        int32_t detection_count = 0;
+
+        for (uint32_t wait_ms = 0U;
+            wait_ms < 1000U;
+            wait_ms++)
+        {
+            detections =
+                npu_worker_get_detections(
+                    current_slot,
+                    frame_index,
+                    &detection_count
+                );
+
+            if (NULL != detections)
+            {
+                break;
+            }
+
+            tk_dly_tsk(1);
+        }
+
+
+        /*
+        * NPU has finished reading this frame before
+        * publishing its result, so it is now safe for
+        * the display consumer to annotate the framebuffer.
+        */
+        if (NULL != detections)
+        {
+            uint8_t * annotated_frame =
+                (uint8_t *) (uintptr_t) current_frame;
+
+
+            for (int32_t i = 0;
+                i < detection_count;
+                i++)
+            {
+                /*
+                * Green RGB565 bounding box.
+                */
+                (void)
+                display_driver_draw_rect_rgb565(
+                    annotated_frame,
+                    VIDEO_SOURCE_WIDTH,
+                    VIDEO_SOURCE_HEIGHT,
+                    (int32_t) detections[i].x1,
+                    (int32_t) detections[i].y1,
+                    (int32_t) detections[i].x2,
+                    (int32_t) detections[i].y2,
+                    0x07E0U,
+                    2U
+                );
+            }
+        }
 
 
         status =

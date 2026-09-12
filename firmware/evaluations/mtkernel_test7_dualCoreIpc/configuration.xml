@@ -9,7 +9,7 @@
     <option key="#DeviceCommand#" value="R7KA8P1KF"/>
     <option key="#RTOS#" value="_none"/>
     <option key="#pinconfiguration#" value="R7KA8P1KFLCAC.pincfg"/>
-    <option key="#FSPVersion#" value="6.5.0"/>
+    <option key="#FSPVersion#" value="6.5.1"/>
     <option key="#ConfigurationFragments#" value="Renesas##BSP##Board##ra8p1_ek##"/>
     <option key="#SELECTED_TOOLCHAIN#" value="gcc-arm-embedded"/>
     <option key="#ToolchainVersion#" value="13.2.1.arm-13-7"/>
@@ -293,7 +293,7 @@
       <property id="config.bsp.common.main_osc_populated" value="config.bsp.common.main_osc_populated.enabled"/>
       <property id="config.bsp.common.pfs_protect" value="config.bsp.common.pfs_protect.enabled"/>
       <property id="config.bsp.common.c_runtime_init" value="config.bsp.common.c_runtime_init.enabled"/>
-      <property id="config.bsp.common.early_init" value="config.bsp.common.early_init.disabled"/>
+      <property id="config.bsp.common.early_init" value="config.bsp.common.early_init.enabled"/>
       <property id="config.bsp.common.main_osc_clock_source" value="config.bsp.common.main_osc_clock_source.crystal"/>
       <property id="config.bsp.common.subclock_populated" value="config.bsp.common.subclock_populated.enabled"/>
       <property id="config.bsp.common.subclock_drive" value="config.bsp.common.subclock_drive.standard"/>
@@ -305,93 +305,101 @@
       <description>Common source for all template projects.</description>
       <originalPack>Renesas.RA_common.6.5.0.pack</originalPack>
     </component>
-    <component apiversion="" class="Common" condition="" group="all" subgroup="fsp_common" variant="" vendor="Renesas" version="6.5.0">
-      <description>Board Support Package Common Files</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
+    <component apiversion="" class="CMSIS" condition="" group="Main" subgroup="DSP" variant="" vendor="Arm" version="1.16.2+fsp.6.5.1">
+      <description>Arm DSP Library Source</description>
+      <originalPack>Arm.CMSIS-DSP.1.16.2+fsp.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ioport" variant="" vendor="Renesas" version="6.5.0">
-      <description>I/O Port</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="CMSIS" condition="" group="Main" subgroup="CoreM" variant="" vendor="Arm" version="6.1.0+fsp.6.5.0">
-      <description>Arm CMSIS Version 6 - Core (M)</description>
-      <originalPack>Arm.CMSIS6.6.1.0+fsp.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="BSP" condition="" group="Board" subgroup="ra8p1_ek" variant="" vendor="Renesas" version="6.5.0">
-      <description>RA8P1-EK Board Support Files</description>
-      <originalPack>Renesas.RA_board_ra8p1_ek.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="device" variant="R7KA8P1KFLCAC" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="device" variant="R7KA8P1KFLCAC" vendor="Renesas" version="6.5.1">
       <description>Board support package for R7KA8P1KFLCAC</description>
-      <originalPack>Renesas.RA_mcu_ra8p1.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA_mcu_ra8p1.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="device" variant="" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="device" variant="" vendor="Renesas" version="6.5.1">
       <description>Board support package for RA8P1</description>
-      <originalPack>Renesas.RA_mcu_ra8p1.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA_mcu_ra8p1.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="fsp" variant="" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="fsp" variant="" vendor="Renesas" version="6.5.1">
       <description>Board support package for RA8P1 - FSP Data</description>
-      <originalPack>Renesas.RA_mcu_ra8p1.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA_mcu_ra8p1.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="events" variant="" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="events" variant="" vendor="Renesas" version="6.5.1">
       <description>Board support package for RA8P1 - Events</description>
-      <originalPack>Renesas.RA_mcu_ra8p1.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA_mcu_ra8p1.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="linker" variant="" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="BSP" condition="" group="ra8p1" subgroup="linker" variant="" vendor="Renesas" version="6.5.1">
       <description>Board support package for RA8P1 - Linker</description>
-      <originalPack>Renesas.RA_mcu_ra8p1.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA_mcu_ra8p1.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_adc_b" variant="" vendor="Renesas" version="6.5.0">
-      <description>A/D Converter</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
+    <component apiversion="" class="BSP" condition="" group="Board" subgroup="ra8p1_ek" variant="" vendor="Renesas" version="6.5.1">
+      <description>RA8P1-EK Board Support Files</description>
+      <originalPack>Renesas.RA_board_ra8p1_ek.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_iic_master" variant="" vendor="Renesas" version="6.5.0">
-      <description>I2C Master Interface</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_glcdc" variant="" vendor="Renesas" version="6.5.0">
-      <description>Graphics LCD Controller</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_dmac" variant="" vendor="Renesas" version="6.5.0">
-      <description>Direct Memory Access Controller</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ospi_b" variant="" vendor="Renesas" version="6.5.0">
-      <description>Octa Serial Peripheral Interface Flash</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="Libraries" condition="" group="FreeRTOS_Plus" subgroup="FreeRTOS_Plus_FAT" variant="" vendor="AWS" version="6.5.0">
+    <component apiversion="" class="Libraries" condition="" group="FreeRTOS_Plus" subgroup="FreeRTOS_Plus_FAT" variant="" vendor="AWS" version="6.5.1">
       <description>FreeRTOS Plus FAT</description>
-      <originalPack>FreeRTOS.FreeRTOS_plus_FAT.6.5.0.pack</originalPack>
+      <originalPack>FreeRTOS.FreeRTOS_plus_FAT.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_usb_basic" variant="" vendor="Renesas" version="6.5.0">
-      <description>USB Basic</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_usb_hmsc" variant="" vendor="Renesas" version="6.5.0">
-      <description>USB Host Mass Storage Class</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_freertos_plus_fat" variant="" vendor="Renesas" version="6.5.0">
-      <description>FreeRTOS+FAT Port for RA</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_block_media_usb" variant="" vendor="Renesas" version="6.5.0">
-      <description>USB Memory Implementation</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
-    </component>
-    <component apiversion="" class="Ethos-U" condition="" group="Core" subgroup="Driver" variant="" vendor="Arm" version="25.2.0+renesas.0.fsp.6.5.0">
+    <component apiversion="" class="Ethos-U" condition="" group="Core" subgroup="Driver" variant="" vendor="Arm" version="25.2.0+renesas.0.fsp.6.5.1">
       <description>Ethos-U core driver</description>
-      <originalPack>Arm.Ethos-U-Core-Driver.25.2.0+renesas.0.fsp.6.5.0.pack</originalPack>
+      <originalPack>Arm.Ethos-U-Core-Driver.25.2.0+renesas.0.fsp.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ipc" variant="" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="CMSIS" condition="" group="Main" subgroup="NN" variant="" vendor="Arm" version="7.0.0+fsp.6.5.1">
+      <description>Arm NN Library Source</description>
+      <originalPack>Arm.CMSIS-NN.7.0.0+fsp.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="CMSIS" condition="" group="Main" subgroup="CoreM" variant="" vendor="Arm" version="6.1.0+fsp.6.5.1">
+      <description>Arm CMSIS Version 6 - Core (M)</description>
+      <originalPack>Arm.CMSIS6.6.1.0+fsp.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="Common" condition="" group="all" subgroup="fsp_common" variant="" vendor="Renesas" version="6.5.1">
+      <description>Board Support Package Common Files</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_adc_b" variant="" vendor="Renesas" version="6.5.1">
+      <description>A/D Converter</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_dmac" variant="" vendor="Renesas" version="6.5.1">
+      <description>Direct Memory Access Controller</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_glcdc" variant="" vendor="Renesas" version="6.5.1">
+      <description>Graphics LCD Controller</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_iic_master" variant="" vendor="Renesas" version="6.5.1">
+      <description>I2C Master Interface</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ioport" variant="" vendor="Renesas" version="6.5.1">
+      <description>I/O Port</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ipc" variant="" vendor="Renesas" version="6.5.1">
       <description>IPC</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
     </component>
-    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_ethosu" variant="" vendor="Renesas" version="6.5.0">
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_ospi_b" variant="" vendor="Renesas" version="6.5.1">
+      <description>Octa Serial Peripheral Interface Flash</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_usb_basic" variant="" vendor="Renesas" version="6.5.1">
+      <description>USB Basic</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_usb_hmsc" variant="" vendor="Renesas" version="6.5.1">
+      <description>USB Host Mass Storage Class</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_freertos_plus_fat" variant="" vendor="Renesas" version="6.5.1">
+      <description>FreeRTOS+FAT Port for RA</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_block_media_usb" variant="" vendor="Renesas" version="6.5.1">
+      <description>USB Memory Implementation</description>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
+    </component>
+    <component apiversion="" class="Middleware" condition="" group="all" subgroup="rm_ethosu" variant="" vendor="Renesas" version="6.5.1">
       <description>Ethos-U Driver Wrapper</description>
-      <originalPack>Renesas.RA.6.5.0.pack</originalPack>
+      <originalPack>Renesas.RA.6.5.1.pack</originalPack>
     </component>
   </raComponentSelection>
   <raElcConfiguration/>

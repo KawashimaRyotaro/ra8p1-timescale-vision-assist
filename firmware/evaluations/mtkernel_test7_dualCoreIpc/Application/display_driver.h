@@ -38,4 +38,16 @@ uint8_t display_driver_arm_release(
     uint32_t slot
 );
 
+display_driver_status_t display_driver_draw_rect_rgb565(
+    uint8_t * frame,
+    uint32_t frame_width,
+    uint32_t frame_height,
+    int32_t x1,
+    int32_t y1,
+    int32_t x2,
+    int32_t y2,
+    uint16_t color,
+    uint32_t thickness
+);
+
 #endif /* DISPLAY_DRIVER_H */

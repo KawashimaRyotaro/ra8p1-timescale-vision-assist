@@ -40,3 +40,7 @@ firmware/evaluations/*/mtk3_bsp2/
 *.webm
 *.RAW
 *.raw
+*.Q56
+*.Y56
+*.R56
+*.jlink

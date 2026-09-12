@@ -399,3 +399,147 @@ uint8_t display_driver_arm_release(
 
     return 1U;
 }
+
+
+display_driver_status_t
+display_driver_draw_rect_rgb565(
+    uint8_t * frame,
+    uint32_t frame_width,
+    uint32_t frame_height,
+    int32_t x1,
+    int32_t y1,
+    int32_t x2,
+    int32_t y2,
+    uint16_t color,
+    uint32_t thickness)
+{
+    if ((NULL == frame) ||
+        (0U == frame_width) ||
+        (0U == frame_height) ||
+        (0U == thickness))
+    {
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
+    }
+
+
+    /*
+     * Clamp bounding box to framebuffer.
+     */
+    if (x1 < 0)
+    {
+        x1 = 0;
+    }
+
+    if (y1 < 0)
+    {
+        y1 = 0;
+    }
+
+    if (x2 >= (int32_t) frame_width)
+    {
+        x2 = (int32_t) frame_width - 1;
+    }
+
+    if (y2 >= (int32_t) frame_height)
+    {
+        y2 = (int32_t) frame_height - 1;
+    }
+
+
+    if ((x2 <= x1) ||
+        (y2 <= y1))
+    {
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
+    }
+
+
+    uint16_t * pixels =
+        (uint16_t *) frame;
+
+
+    for (uint32_t t = 0U;
+         t < thickness;
+         t++)
+    {
+        int32_t const left =
+            x1 + (int32_t) t;
+
+        int32_t const right =
+            x2 - (int32_t) t;
+
+        int32_t const top =
+            y1 + (int32_t) t;
+
+        int32_t const bottom =
+            y2 - (int32_t) t;
+
+
+        if ((right <= left) ||
+            (bottom <= top))
+        {
+            break;
+        }
+
+
+        /*
+         * Horizontal edges.
+         */
+        for (int32_t x = left;
+             x <= right;
+             x++)
+        {
+            pixels[
+                ((uint32_t) top * frame_width) +
+                (uint32_t) x
+            ] = color;
+
+            pixels[
+                ((uint32_t) bottom * frame_width) +
+                (uint32_t) x
+            ] = color;
+        }
+
+
+        /*
+         * Vertical edges.
+         */
+        for (int32_t y = top;
+             y <= bottom;
+             y++)
+        {
+            pixels[
+                ((uint32_t) y * frame_width) +
+                (uint32_t) left
+            ] = color;
+
+            pixels[
+                ((uint32_t) y * frame_width) +
+                (uint32_t) right
+            ] = color;
+        }
+    }
+
+
+#if BSP_CFG_DCACHE_ENABLED
+
+    /*
+     * CPU modified the SDRAM framebuffer.
+     * Make the changes visible to GLCDC.
+     *
+     * Frame buffers are already 64-byte aligned.
+     */
+    SCB_CleanDCache_by_Addr(
+        (volatile void *) frame,
+        (int32_t)
+        (
+            frame_width *
+            frame_height *
+            2U
+        )
+    );
+
+#endif
+
+
+    return DISPLAY_DRIVER_OK;
+}

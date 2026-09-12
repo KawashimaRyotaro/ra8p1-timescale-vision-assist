@@ -45,6 +45,9 @@ static volatile uint8_t
 static volatile uint8_t
     s_npu_consumer_enabled = 0U;
 
+static volatile uint8_t
+    s_display_consumer_enabled = 0U;
+
 static uint32_t
     s_frame_index[VIDEO_SOURCE_BUFFER_COUNT];
 
@@ -138,7 +141,9 @@ void video_source_publish_write_buffer(
     s_frame_index[slot] = frame_index;
 
     /* Display always consumes every published frame. */
-    s_display_pending[slot]  = 1U;
+    s_display_pending[slot] =
+        s_display_consumer_enabled;
+
     s_display_acquired[slot] = 0U;
 
     /*
@@ -353,4 +358,18 @@ void video_source_release_npu_buffer(
             __DMB();
         }
     }
+}
+
+
+void video_source_display_consumer_enable(void)
+{
+    s_display_consumer_enabled = 1U;
+    __DMB();
+}
+
+
+void video_source_display_consumer_disable(void)
+{
+    s_display_consumer_enabled = 0U;
+    __DMB();
 }

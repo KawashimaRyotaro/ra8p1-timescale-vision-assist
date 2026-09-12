@@ -48,6 +48,7 @@
                                  "\r\n1. Full parallel display (1024x600)"\
                                  "\r\n2. VGA  (640 x 480)"\
                                  "\r\n3. QVGA (320 x 240)"\
+                                 "\r\n4. YOLO (224 x 168)"\
                                  "\r\nSelect:"
 
 #define CAMERA_MODE_SELECTION    "\r\nSelect Camera Mode:"\

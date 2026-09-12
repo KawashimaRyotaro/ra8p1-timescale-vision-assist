@@ -21,6 +21,7 @@ const camera_config_t camera_profiles[RES_MAX] = {
     [RES_1024x600]    = {1024, 600},
     [RES_VGA]         = {640,  480},
     [RES_QVGA]        = {320,  240},
+    [RES_YOLO] = {224, 168},
 };
 
 static sensor_reg_t ov5640_mipi[] =

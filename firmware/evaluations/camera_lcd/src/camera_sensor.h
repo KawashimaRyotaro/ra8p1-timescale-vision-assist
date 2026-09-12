@@ -151,8 +151,9 @@ typedef enum {
     RES_1024x600 = 1,
     RES_VGA,
     RES_QVGA,
+    RES_YOLO,
     RES_MAX
-}e_image_resolution;
+} e_image_resolution;
 
 typedef struct {
     uint16_t width;

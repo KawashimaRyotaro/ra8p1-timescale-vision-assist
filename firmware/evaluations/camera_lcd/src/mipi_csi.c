@@ -38,6 +38,13 @@ static fsp_err_t vin_resolution_set (void);
 static fsp_err_t vin_camera_start(capture_cfg_t const * p_cfg);
 static fsp_err_t vin_scale_image(uint16_t new_width, uint16_t new_height);
 
+volatile uint32_t g_debug_vin_input_width       = 0U;
+volatile uint32_t g_debug_vin_input_height      = 0U;
+volatile uint32_t g_debug_vin_output_width      = 0U;
+volatile uint32_t g_debug_vin_output_height     = 0U;
+volatile uint32_t g_debug_vin_stride_bytes      = 0U;
+volatile uint32_t g_debug_vin_active_line_bytes = 0U;
+
 /***********************************************************************************************************************
  *  Function Name: mipi_csi_ep_entry
  *  Description  : This function is used to start MIPI CSI example operation.
@@ -421,6 +428,27 @@ static fsp_err_t vin_scale_image(uint16_t new_width, uint16_t new_height)
      /* Fetch input dimensions from the default configuration */
      const uint16_t input_height = (uint16_t) g_vin_cfg_extend.input_ctrl.preclip.line_end + 1;
      const uint16_t input_width = (uint16_t) g_vin_cfg_extend.input_ctrl.preclip.pixel_end + 1;
+
+     /*
+    * Debug values for confirming the actual VIN frame layout.
+    */
+    g_debug_vin_input_width =
+        (uint32_t) input_width;
+
+    g_debug_vin_input_height =
+        (uint32_t) input_height;
+
+    g_debug_vin_output_width =
+        (uint32_t) new_width;
+
+    g_debug_vin_output_height =
+        (uint32_t) new_height;
+
+    g_debug_vin_stride_bytes =
+        (uint32_t) input_width * 2U;
+
+    g_debug_vin_active_line_bytes =
+        (uint32_t) new_width * 2U;
 
      /* Recalculate the scale masks: new_mask = (old_mask * old_size) / new_size */
      g_vin_cfg_run_time_extend.conversion_data.uds_scale_bits.vertical_mask =

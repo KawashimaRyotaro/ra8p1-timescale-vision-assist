@@ -65,6 +65,14 @@ Camera Frame Contract確定後は、USB datasetを同一形式に変換する。
 
 224x224 INT8はreplay専用形式になるため、Camera Frame Contractには採用しない。
 
+### 224x168 VIN実機確認
+
+2026-09-12、EK-RA8P1 + OV5640 + MIPI CSI + VIN構成で、VIN runtime scalingに224x168を追加し、Live camera streamingがエラーなく動作することを確認した。
+
+この結果から、`width=224`、`height=168`をCamera Frame Contractの第一候補として継続採用する。
+ただし、Camera Frame Contractを完全確定する前に、VINがSDRAMへ書き込む実際のline strideとframe memory layoutを実機または生成設定で確認する。
+USB replayはその実メモリ配置まで一致させる。
+
 ## 4. Preprocessの位置づけ
 
 Preprocessは最終システムに残る処理として扱う。
@@ -158,17 +166,24 @@ YOLOX-Tiny baseline（640x480 RGB565入力）で確認済み：
 - total processing: 約790 ms/frame
 - observed throughput: 約1.28 FPS
 
-最大ボトルネックは現行float bilinear preprocessingである。
-これはCamera Frame Contractを低解像度化できれば、最終システム設計として削減する。
+320x240 RGB565 USB replayでも300/300 frame完走を確認済み：
+
+- preprocessing: 約430 ms/frame
+- RunModel: 約315 ms/frame
+- Ethos-U55 `ethosu_invoke_v3`: 約139 ms/frame
+- postprocess: 約0.9 ms/frame
+
+入力を640x480から320x240へ下げるだけでは、現行float bilinear preprocessingは約8%しか短縮しなかった。
+したがって、224x168をVINで直接生成し、resize自体を最終システムから削除する方針を優先する。
 
 ## 9. 直近の開発順序
 
-1. 最終カメラの実際の出力可能解像度・pixel formatを確認
-2. Camera Frame Contractを固定
-3. USB datasetをCamera Frame Contractと同一形式へ変換
+1. 224x168 VIN出力のSDRAM line stride / frame layoutを確認
+2. Camera Frame Contractを完全固定
+3. USB datasetをCamera Frame Contractと同一メモリ配置へ変換
 4. `frame_source_usb` / `frame_source_camera`を同一Frame Cache APIへ接続
-5. Displayをoptional debug observerへ分離
-6. Camera Contract専用preprocessを実装・計測
+5. Displayをoptional debug observerとして維持
+6. 224x168 Camera Contract専用preprocessを実装・計測
 7. YOLO-Fastestを統合
 8. Difference + adaptive model scheduler
 9. GVS / stereo-spatial audio output

@@ -22,7 +22,7 @@ volatile int8_t g_yolo_fastest_smoke_head10_first = 0;
  *
  * Keep the large buffers in external SDRAM.
  */
-__attribute__((section(".sdram"), aligned(16)))
+__attribute__((aligned(16)))
 static uint8_t s_yolo_fastest_workspace[kBufferSize_sub_0000];
 
 __attribute__((section(".sdram"), aligned(16)))

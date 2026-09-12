@@ -43,55 +43,49 @@ USB replayで再現すべきものは、
 
 ## 3. Camera Frame Contract
 
-最終カメラの出力仕様を次の項目で固定し、その仕様をUSB replayにも適用する。
+### 採用するContract
 
-- width
-- height
-- pixel format
-- byte order
-- stride
-- frame size
-- cropping / scalingの有無
-- frame timestamp / frame_idの扱い
+2026-09-12のEK-RA8P1 + OV5640 + MIPI CSI + VIN実機確認に基づき、第一実装のCamera Frame Contractを以下で固定する。
 
-Camera Frame Contract確定後は、USB datasetを同一形式に変換する。
+- active width: 224 pixels
+- active height: 168 lines
+- pixel format: RGB565
+- bytes per pixel: 2
+- active bytes per line: 448 bytes
+- VIN input width: 1024 pixels
+- VIN input height: 600 lines
+- Frame Cache line stride: 2048 bytes
+- Frame Cache span per image: 2048 x 168 = 344064 bytes
+- active image payload: 224 x 168 x 2 = 75264 bytes
+- scaling: VIN hardwareで1024x600 -> 224x168
 
-最終カメラが低解像度を直接出力できる場合は、MCUでの毎frame resizeを避けることを優先する。
-候補の優先順位は、カメラ実機対応が確認できる範囲で次の通り。
+VIN runtime scalingで224x168 Live camera streamingがエラーなく動作することを実機確認した。
+また、Renesas例の`csi_check_image()`は縮小後のactive widthの後ろを、元のpreclip widthをstrideとしてskipする実装であるため、Frame Cacheはactive imageを2048-byte line pitchで扱う。
 
-1. 224x168 RGB565（4:3、224x224 YOLO入力へ固定paddingのみ）
-2. 320x240 RGB565
-3. 640x480 RGB565
+なお、デバッグ用`g_debug_vin_stride_bytes=2048`自体は`input_width*2`から算出した値であり、単独の独立測定ではない。Contract固定の根拠は、VIN設定値とRenesas例のline-skip実装、および224x168実機streamingの組合せとする。
 
-224x224 INT8はreplay専用形式になるため、Camera Frame Contractには採用しない。
+USB datasetはファイル上でpaddingまで保持する必要はない。USB replay producerがtight-packed 224x168 RGB565を読み、Frame Cacheへ各行448 bytesずつ2048-byte strideで配置することで、Camera sourceと同じFrame Cache layoutを再現する。
 
-### 224x168 VIN実機確認
-
-2026-09-12、EK-RA8P1 + OV5640 + MIPI CSI + VIN構成で、VIN runtime scalingに224x168を追加し、Live camera streamingがエラーなく動作することを確認した。
-
-この結果から、`width=224`、`height=168`をCamera Frame Contractの第一候補として継続採用する。
-ただし、Camera Frame Contractを完全確定する前に、VINがSDRAMへ書き込む実際のline strideとframe memory layoutを実機または生成設定で確認する。
-USB replayはその実メモリ配置まで一致させる。
+224x224 INT8はreplay専用形式になるためCamera Frame Contractには採用しない。
 
 ## 4. Preprocessの位置づけ
 
 Preprocessは最終システムに残る処理として扱う。
 USB replayだけで省略してはならない。
 
-ただしCamera Frame ContractをYOLO入力へ近づけることで、
-resize / bilinear interpolationなどの不要な処理を最終システム自体から排除する。
-
-例：224x168 RGB565を採用できる場合
+Camera Frame Contractを224x168までVINで縮小することで、MCU上のresize / bilinear interpolationを最終システムから削除する。
 
 ```text
-224x168 RGB565
+224x168 RGB565 (stride 2048 bytes)
   ↓
 RGB565 unpack / channel reorder / quantize
   ↓
-上下固定padding
+上下固定padding 28 lines + 28 lines
   ↓
 224x224x3 INT8
 ```
+
+preprocessはstride-awareにし、`source_width`と`source_stride_bytes`を分離して扱う。
 
 ## 5. Debug Display
 
@@ -174,16 +168,16 @@ YOLOX-Tiny baseline（640x480 RGB565入力）で確認済み：
 - postprocess: 約0.9 ms/frame
 
 入力を640x480から320x240へ下げるだけでは、現行float bilinear preprocessingは約8%しか短縮しなかった。
-したがって、224x168をVINで直接生成し、resize自体を最終システムから削除する方針を優先する。
+したがって、224x168をVINで直接生成し、resize自体を最終システムから削除する方針を採用する。
 
 ## 9. 直近の開発順序
 
-1. 224x168 VIN出力のSDRAM line stride / frame layoutを確認
-2. Camera Frame Contractを完全固定
-3. USB datasetをCamera Frame Contractと同一メモリ配置へ変換
-4. `frame_source_usb` / `frame_source_camera`を同一Frame Cache APIへ接続
-5. Displayをoptional debug observerとして維持
-6. 224x168 Camera Contract専用preprocessを実装・計測
+1. 224x168 tight-packed RGB565 USB datasetを作成
+2. Frame Cache bufferを344064 bytes/frame、stride 2048 bytesとして扱えるよう変更
+3. USB replay producerをrow-by-row copyに変更しCamera Frame Contractを再現
+4. preprocessを224x168 + stride 2048専用のresizeなし実装へ変更・計測
+5. `frame_source_camera`を同一Frame Cache APIへ接続
+6. Displayをoptional debug observerとして維持
 7. YOLO-Fastestを統合
 8. Difference + adaptive model scheduler
 9. GVS / stereo-spatial audio output

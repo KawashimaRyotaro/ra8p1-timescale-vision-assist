@@ -82,5 +82,8 @@ void video_source_release_npu_buffer(
     uint32_t slot
 );
 
+void video_source_display_consumer_enable(void);
+void video_source_display_consumer_disable(void);
+
 
 #endif /* VIDEO_SOURCE_H */

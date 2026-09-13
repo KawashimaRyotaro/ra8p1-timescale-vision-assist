@@ -1,77 +1,70 @@
 #include <tm/tmonitor.h>
 #include <tk/tkernel.h>
-#include <string.h>
+#include <stdint.h>
 
 #include "display_driver.h"
 #include "hal_data.h"
-#include "video_source.h"
 
-#define DISPLAY_BACKLIGHT_PIN    BSP_IO_PORT_05_PIN_14
-#define GLCDC_BUFFER_CHANGE_RETRY_MAX    (20U)
+#define DISPLAY_BACKLIGHT_PIN             BSP_IO_PORT_05_PIN_14
+#define GLCDC_BUFFER_CHANGE_RETRY_MAX     (20U)
+#define GLCDC_VSYNC_WAIT_TIMEOUT_MS       (100U)
 
+/*
+ * One debug video is shown at a time.
+ *
+ * Source:  224 x 168 RGB565
+ * Display: 448 x 336 RGB565
+ *
+ * This is exactly 2x in X and 2x in Y, i.e. 4x pixel area.
+ */
+#define DEBUG_SOURCE_WIDTH                (224U)
+#define DEBUG_SOURCE_HEIGHT               (168U)
+#define DEBUG_DISPLAY_WIDTH               (448U)
+#define DEBUG_DISPLAY_HEIGHT              (336U)
+#define DEBUG_DISPLAY_STRIDE_BYTES        (896U)
 
 static uint8_t s_initialized = 0U;
 static uint8_t s_video_back_buffer = 1U;
+static volatile uint32_t s_vsync_count = 0U;
 
 
-/*
- * Buffer which may be returned to the USB producer
- * after GLCDC has completed the active scan.
- */
-static volatile uint32_t
-    s_pending_release_slot =
-        VIDEO_SOURCE_INVALID_SLOT;
-
-static volatile uint8_t
-    s_pending_release_armed = 0U;
-
-
-void display_driver_callback(
-    display_callback_args_t * p_args)
+void display_driver_callback(display_callback_args_t * p_args)
 {
     if (NULL == p_args)
     {
         return;
     }
 
-
-    if (DISPLAY_EVENT_LINE_DETECTION !=
-        p_args->event)
+    if (DISPLAY_EVENT_LINE_DETECTION == p_args->event)
     {
-        return;
-    }
-
-
-    /*
-     * GLCDC has completed the active image scan.
-     *
-     * The framebuffer used by the previous scan
-     * can now safely be returned to the USB producer.
-     *
-     * video_source_release_read_buffer() does not call
-     * any μT-Kernel service; it only changes the
-     * buffer ownership state, so it can be used here.
-     */
-    if (0U != s_pending_release_armed)
-    {
-        uint32_t slot =
-            s_pending_release_slot;
-
-
-        video_source_release_read_buffer(
-            slot
-        );
-
-
-        __DMB();
-
-        s_pending_release_slot =
-            VIDEO_SOURCE_INVALID_SLOT;
-
-        s_pending_release_armed = 0U;
-
+        s_vsync_count++;
         __DMB();
     }
+}
+
+
+static uint32_t display_driver_frame_bytes(void)
+{
+    return
+        DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
+        DISPLAY_VSIZE_INPUT0;
+}
+
+
+static uint8_t * display_driver_get_buffer(uint8_t index)
+{
+    uint8_t * const base =
+        (uint8_t *) g_display0_cfg.input[0].p_base;
+
+    return
+        base +
+        ((uint32_t) index * display_driver_frame_bytes());
+}
+
+
+static uint8_t * display_driver_get_back_buffer(void)
+{
+    return display_driver_get_buffer(s_video_back_buffer);
 }
 
 
@@ -80,13 +73,33 @@ display_driver_status_t display_driver_init(void)
     fsp_err_t err;
 
     tm_printf(
-        (UB *)"[DisplayCfg] "
-               "hsize=%u vsize=%u stride=%u format=%u\n",
+        (UB *)"[DisplayCfg] hsize=%u vsize=%u stride=%u format=%u\n",
         DISPLAY_HSIZE_INPUT0,
         DISPLAY_VSIZE_INPUT0,
         DISPLAY_BUFFER_STRIDE_BYTES_INPUT0,
         (uint32_t) g_display0_cfg.input[0].format
     );
+
+    tm_printf(
+        (UB *)"[DisplayBuf] fb0=0x%08X fb1=0x%08X bytes=%u\n",
+        (uint32_t) (uintptr_t) display_driver_get_buffer(0U),
+        (uint32_t) (uintptr_t) display_driver_get_buffer(1U),
+        display_driver_frame_bytes()
+    );
+
+    /*
+     * The single-view debug layer must be exactly 448 x 336 RGB565.
+     */
+    if ((DEBUG_DISPLAY_WIDTH != DISPLAY_HSIZE_INPUT0) ||
+        (DEBUG_DISPLAY_HEIGHT != DISPLAY_VSIZE_INPUT0) ||
+        (DEBUG_DISPLAY_STRIDE_BYTES != DISPLAY_BUFFER_STRIDE_BYTES_INPUT0))
+    {
+        tm_putstring(
+            (UB *)"[Display] invalid GLCDC input size for single-view mode.\n"
+        );
+
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
+    }
 
     err = R_GLCDC_Open(
         &g_display0_ctrl,
@@ -113,75 +126,49 @@ display_driver_status_t display_driver_init(void)
 }
 
 
-display_driver_status_t
-display_driver_fill(uint32_t color)
+display_driver_status_t display_driver_fill(uint32_t color)
 {
     if (0U == s_initialized)
     {
-        return
-            DISPLAY_DRIVER_ERROR_NOT_INITIALIZED;
+        return DISPLAY_DRIVER_ERROR_NOT_INITIALIZED;
     }
 
-
-    uint8_t * buffer0 =
-        (uint8_t *)
-        g_display0_cfg.input[0].p_base;
-
-
-    uint32_t frame_bytes =
-        DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
-        DISPLAY_VSIZE_INPUT0;
-
-
-    uint8_t * buffer1 =
-        buffer0 + frame_bytes;
-
-
-    uint16_t pixel =
+    uint16_t const pixel =
         (uint16_t) color;
 
-
-    for (uint32_t y = 0U;
-         y < DISPLAY_VSIZE_INPUT0;
-         y++)
+    for (uint8_t buffer_index = 0U;
+         buffer_index < 2U;
+         buffer_index++)
     {
-        uint16_t * row0 =
-            (uint16_t *)
-            (
-                buffer0 +
-                y *
-                DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
-            );
+        uint8_t * const framebuffer =
+            display_driver_get_buffer(buffer_index);
 
-
-        uint16_t * row1 =
-            (uint16_t *)
-            (
-                buffer1 +
-                y *
-                DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
-            );
-
-
-        for (uint32_t x = 0U;
-             x < DISPLAY_HSIZE_INPUT0;
-             x++)
+        for (uint32_t y = 0U;
+             y < DISPLAY_VSIZE_INPUT0;
+             y++)
         {
-            row0[x] = pixel;
-            row1[x] = pixel;
-        }
-    }
+            uint16_t * const row =
+                (uint16_t *)
+                (
+                    framebuffer +
+                    y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+                );
 
+            for (uint32_t x = 0U;
+                 x < DISPLAY_HSIZE_INPUT0;
+                 x++)
+            {
+                row[x] = pixel;
+            }
+        }
 
 #if BSP_CFG_DCACHE_ENABLED
-
-    SCB_CleanDCache_by_Addr(
-        (volatile void *) buffer0,
-        (int32_t) (frame_bytes * 2U)
-    );
-
+        SCB_CleanDCache_by_Addr(
+            (volatile void *) framebuffer,
+            (int32_t) display_driver_frame_bytes()
+        );
 #endif
-
+    }
 
     return DISPLAY_DRIVER_OK;
 }
@@ -215,55 +202,74 @@ display_driver_status_t display_driver_backlight_on(void)
 }
 
 
-display_driver_status_t display_driver_test_pattern(void)
+display_driver_status_t display_driver_compose_debug_view_rgb565(
+    const uint8_t * source,
+    uint32_t source_width,
+    uint32_t source_height,
+    uint32_t source_stride_bytes)
 {
-    uint8_t * buffer0;
-    uint8_t * buffer1;
-
-    if (0U == s_initialized)
+    if ((NULL == source) ||
+        (DEBUG_SOURCE_WIDTH != source_width) ||
+        (DEBUG_SOURCE_HEIGHT != source_height) ||
+        (source_stride_bytes < (source_width * 2U)))
     {
-        return DISPLAY_DRIVER_ERROR_NOT_INITIALIZED;
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
     }
 
-    buffer0 =
-        (uint8_t *) g_display0_cfg.input[0].p_base;
+    uint8_t * const framebuffer =
+        display_driver_get_back_buffer();
 
-    buffer1 =
-        buffer0 +
-        (DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
-         DISPLAY_VSIZE_INPUT0);
-
-    for (uint32_t y = 0U;
-         y < DISPLAY_VSIZE_INPUT0;
-         y++)
+    /*
+     * Exact 2x nearest-neighbor enlargement.
+     *
+     * One source pixel becomes:
+     *
+     *   p p
+     *   p p
+     *
+     * This avoids multiplication/division inside the inner loop.
+     */
+    for (uint32_t sy = 0U;
+         sy < DEBUG_SOURCE_HEIGHT;
+         sy++)
     {
-        uint32_t color;
+        const uint16_t * const src_row =
+            (const uint16_t *)
+            (
+                source +
+                sy * source_stride_bytes
+            );
 
-        if (y < (DISPLAY_VSIZE_INPUT0 / 2U))
+        uint16_t * const dst_row0 =
+            (uint16_t *)
+            (
+                framebuffer +
+                (sy * 2U) *
+                DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+            );
+
+        uint16_t * const dst_row1 =
+            (uint16_t *)
+            (
+                framebuffer +
+                ((sy * 2U) + 1U) *
+                DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+            );
+
+        for (uint32_t sx = 0U;
+             sx < DEBUG_SOURCE_WIDTH;
+             sx++)
         {
-            color = 0x00FF0000UL;     /* RED */
-        }
-        else
-        {
-            color = 0x0000FF00UL;     /* GREEN */
-        }
+            uint16_t const pixel =
+                src_row[sx];
 
-        uint32_t * row0 =
-            (uint32_t *)
-            (buffer0 +
-             y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0);
+            uint32_t const dx =
+                sx * 2U;
 
-        uint32_t * row1 =
-            (uint32_t *)
-            (buffer1 +
-             y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0);
-
-        for (uint32_t x = 0U;
-             x < DISPLAY_HSIZE_INPUT0;
-             x++)
-        {
-            row0[x] = color;
-            row1[x] = color;
+            dst_row0[dx]      = pixel;
+            dst_row0[dx + 1U] = pixel;
+            dst_row1[dx]      = pixel;
+            dst_row1[dx + 1U] = pixel;
         }
     }
 
@@ -271,61 +277,141 @@ display_driver_status_t display_driver_test_pattern(void)
 }
 
 
-display_driver_status_t display_driver_present_rgb565(
-    const uint8_t * source,
+display_driver_status_t display_driver_overlay_rect_rgb565(
     uint32_t source_width,
-    uint32_t source_height)
+    uint32_t source_height,
+    int32_t x1,
+    int32_t y1,
+    int32_t x2,
+    int32_t y2,
+    uint16_t color,
+    uint32_t thickness)
 {
-    fsp_err_t err = FSP_ERR_INVALID_ARGUMENT;
-
-    if ((NULL == source) ||
-        (VIDEO_SOURCE_WIDTH != source_width) ||
-        (VIDEO_SOURCE_HEIGHT != source_height))
+    if ((DEBUG_SOURCE_WIDTH != source_width) ||
+        (DEBUG_SOURCE_HEIGHT != source_height) ||
+        (0U == thickness))
     {
         return DISPLAY_DRIVER_ERROR_ARGUMENT;
     }
 
-    const uint32_t display_frame_bytes =
-        DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
-        DISPLAY_VSIZE_INPUT0;
-
-    uint8_t * const display_base =
-        (uint8_t *) g_display0_cfg.input[0].p_base;
-
-    uint8_t * const framebuffer =
-        display_base +
-        (s_video_back_buffer * display_frame_bytes);
-
-    /*
-     * Camera/VIN-compatible Frame Cache:
-     *     source stride = 2048 B
-     *
-     * GLCDC framebuffer:
-     *     packed RGB565 stride = 448 B
-     */
-    for (uint32_t y = 0U;
-         y < VIDEO_SOURCE_HEIGHT;
-         y++)
+    if (x1 < 0)
     {
-        memcpy(
-            framebuffer +
-                y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0,
-
-            source +
-                y * VIDEO_SOURCE_STRIDE_BYTES,
-
-            VIDEO_SOURCE_ACTIVE_LINE_BYTES
-        );
+        x1 = 0;
     }
 
-#if BSP_CFG_DCACHE_ENABLED
+    if (y1 < 0)
+    {
+        y1 = 0;
+    }
 
+    if (x2 >= (int32_t) source_width)
+    {
+        x2 = (int32_t) source_width - 1;
+    }
+
+    if (y2 >= (int32_t) source_height)
+    {
+        y2 = (int32_t) source_height - 1;
+    }
+
+    if ((x2 <= x1) || (y2 <= y1))
+    {
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
+    }
+
+    /*
+     * Source coordinates -> 2x display coordinates.
+     */
+    int32_t const left   = x1 * 2;
+    int32_t const right  = x2 * 2;
+    int32_t const top    = y1 * 2;
+    int32_t const bottom = y2 * 2;
+
+    uint8_t * const framebuffer =
+        display_driver_get_back_buffer();
+
+    for (uint32_t t = 0U;
+         t < thickness;
+         t++)
+    {
+        int32_t const l = left   + (int32_t) t;
+        int32_t const r = right  - (int32_t) t;
+        int32_t const u = top    + (int32_t) t;
+        int32_t const d = bottom - (int32_t) t;
+
+        if ((r <= l) || (d <= u))
+        {
+            break;
+        }
+
+        uint16_t * const top_row =
+            (uint16_t *)
+            (
+                framebuffer +
+                (uint32_t) u * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+            );
+
+        uint16_t * const bottom_row =
+            (uint16_t *)
+            (
+                framebuffer +
+                (uint32_t) d * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+            );
+
+        for (int32_t x = l;
+             x <= r;
+             x++)
+        {
+            top_row[x]    = color;
+            bottom_row[x] = color;
+        }
+
+        for (int32_t y = u;
+             y <= d;
+             y++)
+        {
+            uint16_t * const row =
+                (uint16_t *)
+                (
+                    framebuffer +
+                    (uint32_t) y *
+                    DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+                );
+
+            row[l] = color;
+            row[r] = color;
+        }
+    }
+
+    return DISPLAY_DRIVER_OK;
+}
+
+
+display_driver_status_t display_driver_present_composed(void)
+{
+    fsp_err_t err =
+        FSP_ERR_INVALID_ARGUMENT;
+
+    uint8_t * const framebuffer =
+        display_driver_get_back_buffer();
+
+    uint32_t const frame_bytes =
+        display_driver_frame_bytes();
+
+#if BSP_CFG_DCACHE_ENABLED
     SCB_CleanDCache_by_Addr(
         (volatile void *) framebuffer,
-        (int32_t) display_frame_bytes
+        (int32_t) frame_bytes
     );
-
 #endif
+
+    /*
+     * Capture the current Vsync count BEFORE the buffer-change request.
+     */
+    __DMB();
+
+    uint32_t const vsync_before =
+        s_vsync_count;
 
     for (uint32_t retry = 0U;
          retry < GLCDC_BUFFER_CHANGE_RETRY_MAX;
@@ -361,192 +447,50 @@ display_driver_status_t display_driver_present_rgb565(
         return DISPLAY_DRIVER_ERROR_BUFFER_CHANGE;
     }
 
+    /*
+     * Wait until the requested frame has crossed a Vsync boundary before
+     * reusing the other display buffer.
+     */
+    uint32_t wait_ms =
+        GLCDC_VSYNC_WAIT_TIMEOUT_MS;
+
+    while ((s_vsync_count == vsync_before) &&
+           (wait_ms > 0U))
+    {
+        tk_dly_tsk(1);
+        wait_ms--;
+    }
+
+    __DMB();
+
+    if (s_vsync_count == vsync_before)
+    {
+        tm_putstring(
+            (UB *)"[Display] Vsync wait timeout.\n"
+        );
+
+        return DISPLAY_DRIVER_ERROR_BUFFER_CHANGE;
+    }
+
     s_video_back_buffer ^= 1U;
 
     return DISPLAY_DRIVER_OK;
 }
 
 
+/*
+ * Legacy compatibility helpers.
+ *
+ * The GLCDC no longer reads Camera/USB raw-frame slots directly.
+ */
 uint8_t display_driver_release_pending(void)
 {
-    __DMB();
-
-    return s_pending_release_armed;
+    return 0U;
 }
 
 
-uint8_t display_driver_arm_release(
-    uint32_t slot)
+uint8_t display_driver_arm_release(uint32_t slot)
 {
-    if (slot >= VIDEO_SOURCE_BUFFER_COUNT)
-    {
-        return 0U;
-    }
-
-
-    /*
-     * There must never be two unreleased GLCDC
-     * framebuffers at the same time.
-     */
-    if (0U != s_pending_release_armed)
-    {
-        return 0U;
-    }
-
-
-    s_pending_release_slot =
-        slot;
-
-    __DMB();
-
-    s_pending_release_armed = 1U;
-
-    __DMB();
-
-
-    return 1U;
-}
-
-
-display_driver_status_t
-display_driver_draw_rect_rgb565(
-    uint8_t * frame,
-    uint32_t frame_width,
-    uint32_t frame_height,
-    int32_t x1,
-    int32_t y1,
-    int32_t x2,
-    int32_t y2,
-    uint16_t color,
-    uint32_t thickness)
-{
-    if ((NULL == frame) ||
-        (0U == frame_width) ||
-        (0U == frame_height) ||
-        (0U == thickness))
-    {
-        return DISPLAY_DRIVER_ERROR_ARGUMENT;
-    }
-
-
-    /*
-     * Clamp bounding box to framebuffer.
-     */
-    if (x1 < 0)
-    {
-        x1 = 0;
-    }
-
-    if (y1 < 0)
-    {
-        y1 = 0;
-    }
-
-    if (x2 >= (int32_t) frame_width)
-    {
-        x2 = (int32_t) frame_width - 1;
-    }
-
-    if (y2 >= (int32_t) frame_height)
-    {
-        y2 = (int32_t) frame_height - 1;
-    }
-
-
-    if ((x2 <= x1) ||
-        (y2 <= y1))
-    {
-        return DISPLAY_DRIVER_ERROR_ARGUMENT;
-    }
-
-
-    uint16_t * pixels =
-        (uint16_t *) frame;
-
-
-    for (uint32_t t = 0U;
-         t < thickness;
-         t++)
-    {
-        int32_t const left =
-            x1 + (int32_t) t;
-
-        int32_t const right =
-            x2 - (int32_t) t;
-
-        int32_t const top =
-            y1 + (int32_t) t;
-
-        int32_t const bottom =
-            y2 - (int32_t) t;
-
-
-        if ((right <= left) ||
-            (bottom <= top))
-        {
-            break;
-        }
-
-
-        /*
-         * Horizontal edges.
-         */
-        for (int32_t x = left;
-             x <= right;
-             x++)
-        {
-            pixels[
-                ((uint32_t) top * frame_width) +
-                (uint32_t) x
-            ] = color;
-
-            pixels[
-                ((uint32_t) bottom * frame_width) +
-                (uint32_t) x
-            ] = color;
-        }
-
-
-        /*
-         * Vertical edges.
-         */
-        for (int32_t y = top;
-             y <= bottom;
-             y++)
-        {
-            pixels[
-                ((uint32_t) y * frame_width) +
-                (uint32_t) left
-            ] = color;
-
-            pixels[
-                ((uint32_t) y * frame_width) +
-                (uint32_t) right
-            ] = color;
-        }
-    }
-
-
-#if BSP_CFG_DCACHE_ENABLED
-
-    /*
-     * CPU modified the SDRAM framebuffer.
-     * Make the changes visible to GLCDC.
-     *
-     * Frame buffers are already 64-byte aligned.
-     */
-    SCB_CleanDCache_by_Addr(
-        (volatile void *) frame,
-        (int32_t)
-        (
-            frame_width *
-            frame_height *
-            2U
-        )
-    );
-
-#endif
-
-
-    return DISPLAY_DRIVER_OK;
+    (void) slot;
+    return 0U;
 }

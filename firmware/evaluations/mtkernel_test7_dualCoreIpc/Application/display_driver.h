@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 
-
 typedef enum
 {
     DISPLAY_DRIVER_OK = 0,
@@ -17,7 +16,6 @@ typedef enum
 
 } display_driver_status_t;
 
-
 display_driver_status_t display_driver_init(void);
 
 display_driver_status_t display_driver_fill(
@@ -26,22 +24,19 @@ display_driver_status_t display_driver_fill(
 
 display_driver_status_t display_driver_backlight_on(void);
 
-display_driver_status_t display_driver_present_rgb565(
+/*
+ * Enlarge one 224x168 RGB565 debug image to 448x336 (2x per axis).
+ */
+display_driver_status_t display_driver_compose_debug_view_rgb565(
     const uint8_t * source,
     uint32_t source_width,
-    uint32_t source_height
+    uint32_t source_height,
+    uint32_t source_stride_bytes
 );
 
-uint8_t display_driver_release_pending(void);
-
-uint8_t display_driver_arm_release(
-    uint32_t slot
-);
-
-display_driver_status_t display_driver_draw_rect_rgb565(
-    uint8_t * frame,
-    uint32_t frame_width,
-    uint32_t frame_height,
+display_driver_status_t display_driver_overlay_rect_rgb565(
+    uint32_t source_width,
+    uint32_t source_height,
     int32_t x1,
     int32_t y1,
     int32_t x2,
@@ -49,5 +44,11 @@ display_driver_status_t display_driver_draw_rect_rgb565(
     uint16_t color,
     uint32_t thickness
 );
+
+display_driver_status_t display_driver_present_composed(void);
+
+/* Legacy compatibility. */
+uint8_t display_driver_release_pending(void);
+uint8_t display_driver_arm_release(uint32_t slot);
 
 #endif /* DISPLAY_DRIVER_H */

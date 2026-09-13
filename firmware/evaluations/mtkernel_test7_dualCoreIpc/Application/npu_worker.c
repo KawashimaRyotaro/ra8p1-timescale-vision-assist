@@ -1,5 +1,6 @@
 #include <tk/tkernel.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -33,6 +34,7 @@ volatile uint32_t g_npu_inference_total_ms = 0U;
 volatile uint32_t g_npu_inference_min_ms   = UINT32_MAX;
 volatile uint32_t g_npu_inference_max_ms   = 0U;
 
+
 /*
  * RGB565 -> YOLOX input preprocessing profiling.
  */
@@ -52,6 +54,7 @@ volatile uint32_t g_npu_postprocess_total_ms = 0U;
 volatile uint32_t g_npu_postprocess_min_ms   = UINT32_MAX;
 volatile uint32_t g_npu_postprocess_max_ms   = 0U;
 
+
 volatile int32_t g_npu_detection_count = 0;
 
 volatile float g_npu_first_x1    = 0.0F;
@@ -62,6 +65,13 @@ volatile float g_npu_first_score = 0.0F;
 
 volatile uint32_t g_npu_first_class = 0U;
 
+
+/*
+ * Legacy exact-frame results.
+ *
+ * Kept because other debug code may still use
+ * npu_worker_get_detections().
+ */
 static Detection_t
     s_slot_detections
         [VIDEO_SOURCE_BUFFER_COUNT]
@@ -83,11 +93,35 @@ static volatile uint32_t
 
 
 /*
- * Get monotonically increasing system operating time.
+ * Newest COMPLETED YOLOX result.
  *
- * This uses the same μT-Kernel API as fps_control.c.
+ * This buffer is independent of the raw Frame Cache slot.
+ * Therefore Display may show the newest semantic result without
+ * waiting for the current 30-FPS raw frame to finish YOLOX.
+ *
+ * s_latest_result_version is used as a seqlock:
+ *
+ *   even = stable snapshot
+ *   odd  = writer is updating snapshot
  */
-static uint8_t npu_worker_get_time_ms(uint64_t * time_ms)
+static Detection_t
+    s_latest_detections[MAX_DETECTIONS];
+
+static volatile int32_t
+    s_latest_detection_count = 0;
+
+static volatile uint32_t
+    s_latest_result_frame_index = UINT32_MAX;
+
+static volatile uint32_t
+    s_latest_result_version = 0U;
+
+
+/*
+ * Get monotonically increasing system operating time.
+ */
+static uint8_t npu_worker_get_time_ms(
+    uint64_t * time_ms)
 {
     if (NULL == time_ms)
     {
@@ -96,7 +130,7 @@ static uint8_t npu_worker_get_time_ms(uint64_t * time_ms)
 
     SYSTIM system_time;
 
-    ER err =
+    ER const err =
         tk_get_otm(
             &system_time
         );
@@ -114,7 +148,96 @@ static uint8_t npu_worker_get_time_ms(uint64_t * time_ms)
 }
 
 
-static void npu_worker_task(INT stacd, void * exinf)
+/*
+ * Invalidate latest completed result.
+ *
+ * Used when a new dataset sequence starts from frame 0.
+ */
+static void npu_worker_invalidate_latest_result(void)
+{
+    s_latest_result_version++;
+
+    __DMB();
+
+    s_latest_detection_count =
+        0;
+
+    s_latest_result_frame_index =
+        UINT32_MAX;
+
+    __DMB();
+
+    s_latest_result_version++;
+
+    __DMB();
+}
+
+
+/*
+ * Publish newest completed YOLOX result.
+ */
+static void npu_worker_publish_latest_result(
+    const Detection_t * detections,
+    int32_t detection_count,
+    uint32_t frame_index)
+{
+    int32_t copy_count =
+        detection_count;
+
+    if (copy_count < 0)
+    {
+        copy_count = 0;
+    }
+
+    if (copy_count >
+        (int32_t) MAX_DETECTIONS)
+    {
+        copy_count =
+            (int32_t) MAX_DETECTIONS;
+    }
+
+
+    /*
+     * Enter write section.
+     */
+    s_latest_result_version++;
+
+    __DMB();
+
+
+    if ((copy_count > 0) &&
+        (NULL != detections))
+    {
+        memcpy(
+            s_latest_detections,
+            detections,
+            (size_t) copy_count *
+            sizeof(Detection_t)
+        );
+    }
+
+
+    s_latest_detection_count =
+        copy_count;
+
+    s_latest_result_frame_index =
+        frame_index;
+
+
+    __DMB();
+
+    /*
+     * Leave write section.
+     */
+    s_latest_result_version++;
+
+    __DMB();
+}
+
+
+static void npu_worker_task(
+    INT stacd,
+    void * exinf)
 {
     (void) stacd;
     (void) exinf;
@@ -129,18 +252,23 @@ static void npu_worker_task(INT stacd, void * exinf)
             &g_rm_ethosu0_cfg
         );
 
-    if (FSP_SUCCESS != g_npu_worker_open_result)
+    if (FSP_SUCCESS !=
+        g_npu_worker_open_result)
     {
         return;
     }
 
 
     /*
-     * Tell video_source that the NPU consumer is active.
+     * Tell video_source that NPU is active.
+     *
+     * With CP1.5 video_source, this consumer receives only the newest
+     * waiting raw frame while Ethos-U55 is busy.
      */
     video_source_npu_consumer_enable();
 
-    g_npu_worker_running = 1U;
+    g_npu_worker_running =
+        1U;
 
 
     while (1)
@@ -164,7 +292,6 @@ static void npu_worker_task(INT stacd, void * exinf)
 
         /*
          * A new RAW sequence starts from frame 0.
-         * Reset inference profiling statistics.
          */
         if (0U == frame_index)
         {
@@ -185,12 +312,16 @@ static void npu_worker_task(INT stacd, void * exinf)
             g_npu_postprocess_total_ms = 0U;
             g_npu_postprocess_min_ms   = UINT32_MAX;
             g_npu_postprocess_max_ms   = 0U;
+
+            npu_worker_invalidate_latest_result();
         }
 
 
         /*
-         * Prove that the NPU worker really sees
-         * the USB-loaded RGB565 SDRAM frame.
+         * Debug sample proving that NPU sees the raw RGB565 frame.
+         *
+         * Note: raw frame uses a 2048-byte line stride, so sample
+         * accesses below intentionally follow the legacy behavior.
          */
         const uint16_t * pixels =
             (const uint16_t *) frame;
@@ -205,8 +336,12 @@ static void npu_worker_task(INT stacd, void * exinf)
             ((uint32_t) pixels[pixel_count - 1U] << 16U);
 
 
-        g_npu_worker_last_slot         = slot;
-        g_npu_worker_last_frame_index  = frame_index;
+        g_npu_worker_last_slot =
+            slot;
+
+        g_npu_worker_last_frame_index =
+            frame_index;
+
         g_npu_worker_frame_count++;
 
 
@@ -214,17 +349,13 @@ static void npu_worker_task(INT stacd, void * exinf)
             GetModelInputPtr_serving_default_images_0();
 
 
-        /*
-        * Actual USB RGB565 frame
-        *     ↓
-        * 224x224 INT8 YOLOX input
-        */
-        letterbox_params_t letterbox_params;
+        letterbox_params_t
+            letterbox_params;
 
 
         /*
-        * Profile RGB565 -> 224x224 INT8 preprocessing.
-        */
+         * RGB565 -> 224x224 INT8 preprocessing.
+         */
         uint64_t preprocess_start_ms = 0U;
         uint64_t preprocess_end_ms   = 0U;
 
@@ -246,9 +377,11 @@ static void npu_worker_task(INT stacd, void * exinf)
         );
 
 
-        if ((0U != preprocess_timing_valid) &&
-            (0U != npu_worker_get_time_ms(
-                    &preprocess_end_ms)))
+        if ((0U !=
+             preprocess_timing_valid) &&
+            (0U !=
+             npu_worker_get_time_ms(
+                 &preprocess_end_ms)))
         {
             uint32_t const elapsed_ms =
                 (uint32_t)
@@ -282,28 +415,37 @@ static void npu_worker_task(INT stacd, void * exinf)
 
 
         /*
-        * Preprocessing has finished reading the SDRAM frame.
-        * The producer can now reuse this slot.
-        */
-        video_source_release_npu_buffer(slot);
+         * IMPORTANT:
+         * Raw frame ownership ends here.
+         *
+         * Ethos-U55 inference below no longer holds the Camera/USB
+         * Frame Cache slot.
+         */
+        video_source_release_npu_buffer(
+            slot
+        );
 
 
         /*
-        * Run YOLOX-Tiny.
-        */
+         * Run YOLOX-Tiny.
+         */
         uint64_t inference_start_ms = 0U;
         uint64_t inference_end_ms   = 0U;
 
-        uint8_t const timing_valid =
+        uint8_t const inference_timing_valid =
             npu_worker_get_time_ms(
                 &inference_start_ms
             );
 
+
         RunModel(false);
 
-        if ((0U != timing_valid) &&
-            (0U != npu_worker_get_time_ms(
-                    &inference_end_ms)))
+
+        if ((0U !=
+             inference_timing_valid) &&
+            (0U !=
+             npu_worker_get_time_ms(
+                 &inference_end_ms)))
         {
             uint32_t const elapsed_ms =
                 (uint32_t)
@@ -337,16 +479,16 @@ static void npu_worker_task(INT stacd, void * exinf)
 
 
         /*
-        * Raw output:
-        * 1029 anchors x 85 channels.
-        */
+         * Raw model output:
+         * 1029 anchors x 85 channels.
+         */
         int8_t * const p_output =
             GetModelOutputPtr_PartitionedCall_0_70478();
 
 
         /*
-        * Mark this slot result invalid while it is being written.
-        */
+         * Mark legacy slot result invalid while writing.
+         */
         s_slot_result_frame_index[slot] =
             UINT32_MAX;
 
@@ -374,9 +516,11 @@ static void npu_worker_task(INT stacd, void * exinf)
             );
 
 
-        if ((0U != postprocess_timing_valid) &&
-            (0U != npu_worker_get_time_ms(
-                    &postprocess_end_ms)))
+        if ((0U !=
+             postprocess_timing_valid) &&
+            (0U !=
+             npu_worker_get_time_ms(
+                 &postprocess_end_ms)))
         {
             uint32_t const elapsed_ms =
                 (uint32_t)
@@ -409,22 +553,31 @@ static void npu_worker_task(INT stacd, void * exinf)
         }
 
 
+        /*
+         * Publish legacy exact-frame result.
+         */
         s_slot_detection_count[slot] =
             detection_count;
 
         __DMB();
 
-
-        /*
-        * Publish frame_index last.
-        *
-        * Once the display task sees this value,
-        * the corresponding detection buffer is complete.
-        */
         s_slot_result_frame_index[slot] =
             frame_index;
 
         __DMB();
+
+
+        /*
+         * Publish independent newest-completed semantic result.
+         *
+         * Display will use this result without waiting for the raw
+         * frame currently being shown.
+         */
+        npu_worker_publish_latest_result(
+            s_slot_detections[slot],
+            detection_count,
+            frame_index
+        );
 
 
         g_npu_detection_count =
@@ -432,8 +585,8 @@ static void npu_worker_task(INT stacd, void * exinf)
 
 
         /*
-        * Export first detection for debugger inspection.
-        */
+         * Export first detection for debugger inspection.
+         */
         if (detection_count > 0)
         {
             g_npu_first_x1 =
@@ -464,7 +617,10 @@ static void npu_worker_task(INT stacd, void * exinf)
             g_npu_first_class = 0U;
         }
 
-        g_npu_worker_last_mismatch = 0U;
+
+        g_npu_worker_last_mismatch =
+            0U;
+
         g_npu_worker_run_count++;
     }
 }
@@ -502,8 +658,10 @@ const Detection_t * npu_worker_get_detections(
     uint32_t frame_index,
     int32_t * p_detection_count)
 {
-    if ((slot >= VIDEO_SOURCE_BUFFER_COUNT) ||
-        (NULL == p_detection_count))
+    if ((slot >=
+         VIDEO_SOURCE_BUFFER_COUNT) ||
+        (NULL ==
+         p_detection_count))
     {
         return NULL;
     }
@@ -529,5 +687,116 @@ const Detection_t * npu_worker_get_detections(
         s_slot_detection_count[slot];
 
 
-    return s_slot_detections[slot];
+    return
+        s_slot_detections[slot];
+}
+
+
+int32_t npu_worker_copy_latest_detections(
+    Detection_t * p_out_detections,
+    uint32_t capacity,
+    uint32_t * p_result_frame_index)
+{
+    if ((NULL ==
+         p_out_detections) ||
+        (0U ==
+         capacity) ||
+        (NULL ==
+         p_result_frame_index))
+    {
+        return -1;
+    }
+
+
+    /*
+     * Retry if the NPU worker happens to publish a new snapshot while
+     * Display is copying the previous one.
+     */
+    for (uint32_t retry = 0U;
+         retry < 4U;
+         retry++)
+    {
+        uint32_t const version_before =
+            s_latest_result_version;
+
+
+        /*
+         * Odd version means writer is active.
+         */
+        if (0U !=
+            (version_before & 1U))
+        {
+            continue;
+        }
+
+
+        __DMB();
+
+
+        uint32_t const result_frame_index =
+            s_latest_result_frame_index;
+
+
+        /*
+         * No completed inference yet.
+         */
+        if (UINT32_MAX ==
+            result_frame_index)
+        {
+            return -1;
+        }
+
+
+        int32_t copy_count =
+            s_latest_detection_count;
+
+
+        if (copy_count < 0)
+        {
+            copy_count =
+                0;
+        }
+
+
+        if ((uint32_t) copy_count >
+            capacity)
+        {
+            copy_count =
+                (int32_t) capacity;
+        }
+
+
+        if (copy_count > 0)
+        {
+            memcpy(
+                p_out_detections,
+                s_latest_detections,
+                (size_t) copy_count *
+                sizeof(Detection_t)
+            );
+        }
+
+
+        __DMB();
+
+
+        uint32_t const version_after =
+            s_latest_result_version;
+
+
+        if ((version_before ==
+             version_after) &&
+            (0U ==
+             (version_after & 1U)))
+        {
+            *p_result_frame_index =
+                result_frame_index;
+
+            return
+                copy_count;
+        }
+    }
+
+
+    return -1;
 }

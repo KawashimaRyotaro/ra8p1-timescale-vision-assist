@@ -31,6 +31,19 @@ volatile uint32_t g_display_debug_view =
 
 LOCAL ID s_display_task_id = 0;
 
+/*
+ * Snapshot of the newest completed YOLOX result.
+ *
+ * This is independent of the current 30-FPS raw frame.  The display
+ * never waits for YOLOX; it simply reuses the last completed result
+ * until a newer one becomes available.
+ */
+static Detection_t s_display_latest_detections[MAX_DETECTIONS];
+
+volatile uint32_t g_display_latest_yolo_frame_index = UINT32_MAX;
+volatile int32_t  g_display_latest_yolo_detection_count = -1;
+volatile int32_t  g_display_latest_yolo_age_frames = -1;
+
 LOCAL void display_task_entry(INT stacd, void *exinf);
 
 
@@ -218,23 +231,55 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
         if (DISPLAY_DEBUG_VIEW_RAW_YOLO ==
             selected_view)
         {
-            for (uint32_t wait_ms = 0U;
-                 wait_ms < 1000U;
-                 wait_ms++)
+            /*
+             * Non-blocking latest-result overlay.
+             *
+             * The displayed RAW frame remains 30-FPS.  YOLOX is slower,
+             * so the newest completed detection result is copied here
+             * and reused until the next YOLOX result is published.
+             *
+             * This keeps the semantic path asynchronous and prevents
+             * Display from holding a raw Frame Cache slot for ~150 ms.
+             */
+            uint32_t yolo_frame_index =
+                UINT32_MAX;
+
+            int32_t const latest_count =
+                npu_worker_copy_latest_detections(
+                    s_display_latest_detections,
+                    MAX_DETECTIONS,
+                    &yolo_frame_index
+                );
+
+            if (latest_count >= 0)
             {
                 detections =
-                    npu_worker_get_detections(
-                        current_slot,
-                        frame_index,
-                        &detection_count
-                    );
+                    s_display_latest_detections;
 
-                if (NULL != detections)
+                detection_count =
+                    latest_count;
+
+                g_display_latest_yolo_frame_index =
+                    yolo_frame_index;
+
+                g_display_latest_yolo_detection_count =
+                    latest_count;
+
+                if (frame_index >=
+                    yolo_frame_index)
                 {
-                    break;
+                    g_display_latest_yolo_age_frames =
+                        (int32_t)
+                        (
+                            frame_index -
+                            yolo_frame_index
+                        );
                 }
-
-                tk_dly_tsk(1);
+                else
+                {
+                    g_display_latest_yolo_age_frames =
+                        -1;
+                }
             }
         }
 

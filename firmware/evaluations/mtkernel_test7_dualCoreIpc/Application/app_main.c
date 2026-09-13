@@ -4,6 +4,7 @@
 #include "hal_data.h"
 
 #include "display_task.h"
+#include "motion_task.h"
 #include "video_source.h"
 #include "usb_loader.h"
 #include "ipc_test.h"
@@ -38,12 +39,14 @@ EXPORT INT usermain(void)
         (UB *)"[Video] SDRAM frame source initialized.\n"
     );
 
+
     /*
      * Create application tasks.
      */
-    #if APP_ENABLE_DEBUG_DISPLAY
+#if APP_ENABLE_DEBUG_DISPLAY
 
-    err = display_task_create();
+    err =
+        display_task_create();
 
     if (err < E_OK)
     {
@@ -55,9 +58,25 @@ EXPORT INT usermain(void)
         goto error;
     }
 
-    #endif
+#endif
 
-    err = usb_loader_create();
+
+    err =
+        motion_task_create();
+
+    if (err < E_OK)
+    {
+        tm_printf(
+            (UB *)"ERROR: motion_task_create = %d\n",
+            err
+        );
+
+        goto error;
+    }
+
+
+    err =
+        usb_loader_create();
 
     if (err < E_OK)
     {
@@ -69,14 +88,20 @@ EXPORT INT usermain(void)
         goto error;
     }
 
-    npu_worker_start();
 
     /*
-     * Start application tasks.
+     * npu_worker_start() creates and starts the NPU worker internally.
      */
-    #if APP_ENABLE_DEBUG_DISPLAY
+    npu_worker_start();
 
-    err = display_task_start();
+
+    /*
+     * Start consumers before the USB producer.
+     */
+#if APP_ENABLE_DEBUG_DISPLAY
+
+    err =
+        display_task_start();
 
     if (err < E_OK)
     {
@@ -88,9 +113,25 @@ EXPORT INT usermain(void)
         goto error;
     }
 
-    #endif
+#endif
 
-    err = usb_loader_start();
+
+    err =
+        motion_task_start();
+
+    if (err < E_OK)
+    {
+        tm_printf(
+            (UB *)"ERROR: motion_task_start = %d\n",
+            err
+        );
+
+        goto error;
+    }
+
+
+    err =
+        usb_loader_start();
 
     if (err < E_OK)
     {
@@ -103,7 +144,9 @@ EXPORT INT usermain(void)
     }
 
 
-    tm_putstring((UB *)"All application tasks started.\n");
+    tm_putstring(
+        (UB *)"All application tasks started.\n"
+    );
 
     tk_slp_tsk(TMO_FEVR);
 

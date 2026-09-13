@@ -305,12 +305,6 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
             tk_dly_tsk(1);
         }
 
-
-        fps_control_display_begin(
-            frame_index
-        );
-
-
         /*
         * Wait for the NPU result corresponding to
         * exactly this framebuffer.
@@ -340,6 +334,9 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
             tk_dly_tsk(1);
         }
 
+        fps_control_display_begin(
+            frame_index
+        );
 
         /*
         * NPU has finished reading this frame before

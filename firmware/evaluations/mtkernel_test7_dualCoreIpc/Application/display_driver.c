@@ -1,5 +1,6 @@
 #include <tm/tmonitor.h>
 #include <tk/tkernel.h>
+#include <string.h>
 
 #include "display_driver.h"
 #include "hal_data.h"
@@ -10,6 +11,7 @@
 
 
 static uint8_t s_initialized = 0U;
+static uint8_t s_video_back_buffer = 1U;
 
 
 /*
@@ -274,9 +276,7 @@ display_driver_status_t display_driver_present_rgb565(
     uint32_t source_width,
     uint32_t source_height)
 {
-    fsp_err_t err =
-        FSP_ERR_INVALID_ARGUMENT;
-
+    fsp_err_t err = FSP_ERR_INVALID_ARGUMENT;
 
     if ((NULL == source) ||
         (VIDEO_SOURCE_WIDTH != source_width) ||
@@ -285,29 +285,48 @@ display_driver_status_t display_driver_present_rgb565(
         return DISPLAY_DRIVER_ERROR_ARGUMENT;
     }
 
+    const uint32_t display_frame_bytes =
+        DISPLAY_BUFFER_STRIDE_BYTES_INPUT0 *
+        DISPLAY_VSIZE_INPUT0;
+
+    uint8_t * const display_base =
+        (uint8_t *) g_display0_cfg.input[0].p_base;
+
+    uint8_t * const framebuffer =
+        display_base +
+        (s_video_back_buffer * display_frame_bytes);
 
     /*
-     * R_GLCDC_BufferChange() requires 64-byte alignment.
+     * Camera/VIN-compatible Frame Cache:
+     *     source stride = 2048 B
+     *
+     * GLCDC framebuffer:
+     *     packed RGB565 stride = 448 B
      */
-    if (0U !=
-        ((uintptr_t) source & 0x3FU))
+    for (uint32_t y = 0U;
+         y < VIDEO_SOURCE_HEIGHT;
+         y++)
     {
-        tm_printf(
-            (UB *)"[Display] framebuffer not 64-byte aligned: 0x%08X\n",
-            (uint32_t) (uintptr_t) source
-        );
+        memcpy(
+            framebuffer +
+                y * DISPLAY_BUFFER_STRIDE_BYTES_INPUT0,
 
-        return DISPLAY_DRIVER_ERROR_ARGUMENT;
+            source +
+                y * VIDEO_SOURCE_STRIDE_BYTES,
+
+            VIDEO_SOURCE_ACTIVE_LINE_BYTES
+        );
     }
 
+#if BSP_CFG_DCACHE_ENABLED
 
-    /*
-     * No pixel conversion.
-     * No CPU framebuffer copy.
-     *
-     * The RGB565 SDRAM frame received from USB DMA
-     * becomes the GLCDC input framebuffer itself.
-     */
+    SCB_CleanDCache_by_Addr(
+        (volatile void *) framebuffer,
+        (int32_t) display_frame_bytes
+    );
+
+#endif
+
     for (uint32_t retry = 0U;
          retry < GLCDC_BUFFER_CHANGE_RETRY_MAX;
          retry++)
@@ -315,34 +334,22 @@ display_driver_status_t display_driver_present_rgb565(
         err =
             R_GLCDC_BufferChange(
                 &g_display0_ctrl,
-                (uint8_t *) source,
+                framebuffer,
                 DISPLAY_FRAME_LAYER_1
             );
-
 
         if (FSP_SUCCESS == err)
         {
             break;
         }
 
-
-        if (FSP_ERR_INVALID_UPDATE_TIMING !=
-            err)
+        if (FSP_ERR_INVALID_UPDATE_TIMING != err)
         {
             break;
         }
 
-
-        /*
-        * Yield CPU while waiting for the next
-        * GLCDC update window.
-        *
-        * This allows the lower-priority USB task
-        * to continue filling the free SDRAM buffer.
-        */
         tk_dly_tsk(1);
     }
-
 
     if (FSP_SUCCESS != err)
     {
@@ -351,10 +358,10 @@ display_driver_status_t display_driver_present_rgb565(
             err
         );
 
-        return
-            DISPLAY_DRIVER_ERROR_BUFFER_CHANGE;
+        return DISPLAY_DRIVER_ERROR_BUFFER_CHANGE;
     }
 
+    s_video_back_buffer ^= 1U;
 
     return DISPLAY_DRIVER_OK;
 }

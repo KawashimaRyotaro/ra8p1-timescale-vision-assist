@@ -8,7 +8,7 @@
 #include "usb_loader.h"
 #include "ipc_test.h"
 
-#define APP_ENABLE_DEBUG_DISPLAY    (0U)
+#define APP_ENABLE_DEBUG_DISPLAY    (1U)
 
 
 void npu_smoke_test(void);

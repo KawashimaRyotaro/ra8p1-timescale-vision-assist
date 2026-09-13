@@ -1792,8 +1792,8 @@ FSP Configuration
       Interrupts: Underflow 1 Interrupt Priority: Disabled
       Interrupts: Underflow 2 Interrupt Priority: Disabled
       Input: Graphics Layer 1: General: Enabled: Yes
-      Input: Graphics Layer 1: General: Horizontal size: 640
-      Input: Graphics Layer 1: General: Vertical size: 480
+      Input: Graphics Layer 1: General: Horizontal size: 224
+      Input: Graphics Layer 1: General: Vertical size: 168
       Input: Graphics Layer 1: General: Horizontal position: 192
       Input: Graphics Layer 1: General: Vertical position: 60
       Input: Graphics Layer 1: Framebuffer: Framebuffer name: fb_background

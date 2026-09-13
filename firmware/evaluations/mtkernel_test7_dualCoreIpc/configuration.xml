@@ -1182,8 +1182,8 @@
       <property id="module.driver.display.underflow_1_ipl" value="_disabled"/>
       <property id="module.driver.display.underflow_2_ipl" value="_disabled"/>
       <property id="module.driver.display.input0.enable" value="module.driver.display.input0.enable.true"/>
-      <property id="module.driver.display.input0.hsize" value="640"/>
-      <property id="module.driver.display.input0.vsize" value="480"/>
+      <property id="module.driver.display.input0.hsize" value="224"/>
+      <property id="module.driver.display.input0.vsize" value="168"/>
       <property id="module.driver.display.layer0.coordinate.x" value="192"/>
       <property id="module.driver.display.layer0.coordinate.y" value="60"/>
       <property id="module.driver.display.input0.buffer_name" value="fb_background"/>

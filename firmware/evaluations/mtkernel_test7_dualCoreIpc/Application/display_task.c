@@ -11,6 +11,7 @@
 #include "fps_control.h"
 #include "npu_worker.h"
 #include "motion_task.h"
+#include "motion_global.h"
 
 
 #define DISPLAY_TASK_PRIORITY     (10)
@@ -18,17 +19,13 @@
 
 
 /*
- * One debug video is shown at a time.
+ * RAW is always the base image.
  *
- * Current implemented sources:
- *   RAW_YOLO : raw video + latest completed YOLO bbox
- *   RAW      : raw video only
- *   MOTION   : raw video + exact-frame motion vectors
- *
- * DIFF / RISK are reserved and currently fall back to RAW.
+ * BBOX / VECTOR / ACTIVITY can be independently enabled
+ * and combined by bit mask.
  */
-volatile uint32_t g_display_debug_view =
-    (uint32_t) DISPLAY_DEBUG_VIEW_MOTION;
+volatile uint32_t g_display_overlay_mask =
+    DISPLAY_OVERLAY_ALL;
 
 
 LOCAL ID s_display_task_id = 0;
@@ -45,8 +42,27 @@ static Detection_t s_display_latest_detections[MAX_DETECTIONS];
 /*
  * Exact-frame Motion snapshot for debug drawing.
  */
+/*
+ * RAW exact-frame vectors from Motion task.
+ */
+static motion_vector_t
+    s_display_motion_vectors_raw[MOTION_VECTOR_COUNT];
+
+/*
+ * Vectors actually used by VECTOR / ACTIVITY overlays.
+ *
+ * Compensation ON:
+ *   RAW - estimated global translation
+ *
+ * Compensation OFF:
+ *   RAW
+ */
 static motion_vector_t
     s_display_motion_vectors[MOTION_VECTOR_COUNT];
+
+
+static motion_global_result_t
+    s_display_global_result;
 
 volatile uint32_t g_display_latest_yolo_frame_index = UINT32_MAX;
 volatile int32_t  g_display_latest_yolo_detection_count = -1;
@@ -100,18 +116,83 @@ ER display_task_start(void)
 }
 
 
-void display_task_set_debug_view(
-    display_debug_view_t view)
+void display_task_set_overlay_mask(
+    uint32_t overlay_mask)
 {
-    if ((uint32_t) view >=
-        (uint32_t) DISPLAY_DEBUG_VIEW_COUNT)
+    g_display_overlay_mask =
+        overlay_mask &
+        DISPLAY_OVERLAY_ALL;
+}
+
+
+/*
+ * Motion activity:
+ *
+ * A = |dx| + |dy|
+ *
+ * dx,dy are each in [-4,+4], therefore:
+ *
+ * A = 0 ... 8
+ *
+ * Activity is visualized only as a blue block outline.
+ * It is NOT a risk score.
+ */
+LOCAL uint32_t display_task_motion_activity(
+    motion_vector_t const * vector)
+{
+    int32_t const dx =
+        vector->dx;
+
+    int32_t const dy =
+        vector->dy;
+
+    uint32_t const abs_dx =
+        (uint32_t)
+        (
+            (dx < 0) ?
+            -dx :
+            dx
+        );
+
+    uint32_t const abs_dy =
+        (uint32_t)
+        (
+            (dy < 0) ?
+            -dy :
+            dy
+        );
+
+    return
+        abs_dx + abs_dy;
+}
+
+
+/*
+ * Encode activity 1...8 as blue intensity in RGB565.
+ *
+ * 0 is handled separately and is not drawn.
+ */
+LOCAL uint16_t display_task_activity_color(
+    uint32_t activity)
+{
+    if (activity > 8U)
     {
-        return;
+        activity =
+            8U;
     }
 
-    g_display_debug_view =
-        (uint32_t) view;
+    uint32_t blue =
+        3U +
+        ((activity * 28U) / 8U);
 
+    if (blue > 31U)
+    {
+        blue =
+            31U;
+    }
+
+    return
+        (uint16_t) blue;
 }
 
 
@@ -220,9 +301,8 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
 
 
     
-        display_debug_view_t const selected_view =
-            (display_debug_view_t)
-            g_display_debug_view;
+        uint32_t const overlay_mask =
+            g_display_overlay_mask;
 
 
         /*
@@ -237,8 +317,9 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
             0;
 
 
-        if (DISPLAY_DEBUG_VIEW_RAW_YOLO ==
-            selected_view)
+        if (0U !=
+            (overlay_mask &
+            DISPLAY_OVERLAY_BBOX))
         {
             /*
              * Non-blocking latest-result overlay.
@@ -321,7 +402,9 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
          * Display never waits for YOLOX.
          */
         if ((DISPLAY_DRIVER_OK == status) &&
-            (DISPLAY_DEBUG_VIEW_RAW_YOLO == selected_view) &&
+            (0U !=
+            (overlay_mask &
+            DISPLAY_OVERLAY_BBOX)) &&
             (NULL != detections))
         {
             for (int32_t i = 0;
@@ -352,47 +435,166 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
 
 
         if ((DISPLAY_DRIVER_OK == status) &&
-            (DISPLAY_DEBUG_VIEW_MOTION == selected_view))
+            (0U !=
+            (overlay_mask &
+            (DISPLAY_OVERLAY_VECTOR |
+            DISPLAY_OVERLAY_ACTIVITY))))
         {
             motion_vectors_available =
                 motion_task_copy_vectors_for_frame(
                     frame_index,
-                    s_display_motion_vectors
+                    s_display_motion_vectors_raw
                 );
+
+
+            if (0U != motion_vectors_available)
+            {
+                motion_global_compensate(
+                    s_display_motion_vectors_raw,
+                    s_display_motion_vectors,
+                    &s_display_global_result
+                );
+
+
+                if ((1U == frame_index) ||
+                    (100U == frame_index) ||
+                    (200U == frame_index) ||
+                    (299U == frame_index))
+                {
+                    tm_printf(
+                        (UB *)"[Motion][Global] "
+                            "frame=%u enable=%u "
+                            "global=(%d,%d) "
+                            "valid=%u applied=%u "
+                            "consensus=%u/12 "
+                            "cols=%u/4 rows=%u/3\n",
+                        frame_index,
+                        g_motion_global_compensation_enabled,
+                        s_display_global_result.dx,
+                        s_display_global_result.dy,
+                        s_display_global_result.valid,
+                        s_display_global_result.applied,
+                        s_display_global_result.consensus_sectors,
+                        s_display_global_result.agreeing_cols,
+                        s_display_global_result.agreeing_rows
+                    );
+                }
+            }
         }
 
 
         /*
-         * Sparse synchronization log.
-         */
-        if ((DISPLAY_DEBUG_VIEW_MOTION == selected_view) &&
-            ((1U == frame_index) ||
-             (100U == frame_index) ||
-             (200U == frame_index) ||
-             (299U == frame_index)))
-        {
-            tm_printf(
-                (UB *)"[Display][Motion] "
-                      "display_frame=%u latest_vector_frame=%u "
-                      "exact=%u view=%u\n",
-                frame_index,
-                g_motion_vector_last_frame_index,
-                motion_vectors_available,
-                (uint32_t) selected_view
-            );
-        }
-
-
-        /*
-         * CP2 exact-frame motion visualization.
-         *
-         * Red dot    : center of each 7x7 grayscale block.
-         * Yellow line: previous -> current motion vector.
-         *
-         * Gray coordinate -> RAW coordinate scale = 2.
-         */
+        * Motion activity overlay.
+        *
+        * Blue block outline intensity represents:
+        *
+        *     A = |dx| + |dy|
+        *
+        * The top and bottom block rows are hidden from the debug
+        * visualization, consistently with the vector overlay.
+        */
         if ((DISPLAY_DRIVER_OK == status) &&
-            (DISPLAY_DEBUG_VIEW_MOTION == selected_view) &&
+            (0U !=
+            (overlay_mask &
+            DISPLAY_OVERLAY_ACTIVITY)) &&
+            (0U != motion_vectors_available))
+        {
+            for (uint32_t block_y = 1U;
+                block_y < (MOTION_GRID_ROWS - 1U);
+                block_y++)
+            {
+                for (uint32_t block_x = 0U;
+                    block_x < MOTION_GRID_COLS;
+                    block_x++)
+                {
+                    uint32_t const vector_index =
+                        block_y *
+                        MOTION_GRID_COLS +
+                        block_x;
+
+                    motion_vector_t const * const vector =
+                        &s_display_motion_vectors[
+                            vector_index
+                        ];
+
+                    uint32_t const activity =
+                        display_task_motion_activity(
+                            vector
+                        );
+
+                    if (0U == activity)
+                    {
+                        continue;
+                    }
+
+
+                    /*
+                    * One grayscale block = 7x7.
+                    * One RAW block       = 14x14.
+                    */
+                    int32_t const x1 =
+                        (int32_t)
+                        (
+                            block_x *
+                            MOTION_BLOCK_WIDTH *
+                            2U
+                        );
+
+                    int32_t const y1 =
+                        (int32_t)
+                        (
+                            block_y *
+                            MOTION_BLOCK_HEIGHT *
+                            2U
+                        );
+
+                    int32_t const x2 =
+                        x1 +
+                        (int32_t)
+                        (
+                            MOTION_BLOCK_WIDTH *
+                            2U -
+                            1U
+                        );
+
+                    int32_t const y2 =
+                        y1 +
+                        (int32_t)
+                        (
+                            MOTION_BLOCK_HEIGHT *
+                            2U -
+                            1U
+                        );
+
+                    uint16_t const activity_color =
+                        display_task_activity_color(
+                            activity
+                        );
+
+
+                    (void)
+                    display_driver_overlay_rect_rgb565(
+                        VIDEO_SOURCE_WIDTH,
+                        VIDEO_SOURCE_HEIGHT,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        activity_color,
+                        2U
+                    );
+                }
+            }
+        }
+
+
+        /*
+        * CP2 exact-frame motion-vector visualization.
+        */
+        if ((DISPLAY_DRIVER_OK == status) &&
+            (0U !=
+            (overlay_mask &
+            DISPLAY_OVERLAY_VECTOR)) &&
             (0U != motion_vectors_available))
         {
             for (uint32_t block_y = 1U;

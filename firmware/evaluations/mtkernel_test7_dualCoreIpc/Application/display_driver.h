@@ -45,6 +45,17 @@ display_driver_status_t display_driver_overlay_rect_rgb565(
     uint32_t thickness
 );
 
+display_driver_status_t display_driver_overlay_vector_rgb565(
+    uint32_t source_width,
+    uint32_t source_height,
+    int32_t source_x,
+    int32_t source_y,
+    int32_t source_dx,
+    int32_t source_dy,
+    uint16_t origin_color,
+    uint16_t line_color
+);
+
 display_driver_status_t display_driver_present_composed(void);
 
 /* Legacy compatibility. */

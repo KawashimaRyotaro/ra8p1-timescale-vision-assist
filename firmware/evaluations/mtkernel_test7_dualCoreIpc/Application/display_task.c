@@ -10,6 +10,7 @@
 #include "video_source.h"
 #include "fps_control.h"
 #include "npu_worker.h"
+#include "motion_task.h"
 
 
 #define DISPLAY_TASK_PRIORITY     (10)
@@ -20,13 +21,14 @@
  * One debug video is shown at a time.
  *
  * Current implemented sources:
- *   RAW_YOLO : raw video + YOLO bbox
+ *   RAW_YOLO : raw video + latest completed YOLO bbox
  *   RAW      : raw video only
+ *   MOTION   : raw video + exact-frame motion vectors
  *
- * DIFF / MOTION / RISK are reserved and currently fall back to RAW.
+ * DIFF / RISK are reserved and currently fall back to RAW.
  */
 volatile uint32_t g_display_debug_view =
-    (uint32_t) DISPLAY_DEBUG_VIEW_RAW_YOLO;
+    (uint32_t) DISPLAY_DEBUG_VIEW_MOTION;
 
 
 LOCAL ID s_display_task_id = 0;
@@ -39,6 +41,12 @@ LOCAL ID s_display_task_id = 0;
  * until a newer one becomes available.
  */
 static Detection_t s_display_latest_detections[MAX_DETECTIONS];
+
+/*
+ * Exact-frame Motion snapshot for debug drawing.
+ */
+static motion_vector_t
+    s_display_motion_vectors[MOTION_VECTOR_COUNT];
 
 volatile uint32_t g_display_latest_yolo_frame_index = UINT32_MAX;
 volatile int32_t  g_display_latest_yolo_detection_count = -1;
@@ -218,8 +226,9 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
 
 
         /*
-         * Only RAW_YOLO requires the exact-frame NPU result.
-         * RAW / DIFF / MOTION / RISK do not wait for YOLO.
+         * Only RAW_YOLO uses NPU results.
+         * The result is the newest completed YOLOX result; Display never
+         * waits for an exact-frame semantic result.
          */
         const Detection_t * detections =
             NULL;
@@ -305,6 +314,12 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
             );
 
 
+        /*
+         * RAW + latest completed YOLOX result.
+         *
+         * This remains intentionally asynchronous:
+         * Display never waits for YOLOX.
+         */
         if ((DISPLAY_DRIVER_OK == status) &&
             (DISPLAY_DEBUG_VIEW_RAW_YOLO == selected_view) &&
             (NULL != detections))
@@ -324,6 +339,129 @@ LOCAL void display_task_entry(INT stacd, void *exinf)
                     0x07E0U,
                     4U
                 );
+            }
+        }
+
+
+        /*
+         * Obtain the motion-vector field belonging to exactly the
+         * RAW frame that Display is currently composing.
+         */
+        uint8_t motion_vectors_available =
+            0U;
+
+
+        if ((DISPLAY_DRIVER_OK == status) &&
+            (DISPLAY_DEBUG_VIEW_MOTION == selected_view))
+        {
+            motion_vectors_available =
+                motion_task_copy_vectors_for_frame(
+                    frame_index,
+                    s_display_motion_vectors
+                );
+        }
+
+
+        /*
+         * Sparse synchronization log.
+         */
+        if ((DISPLAY_DEBUG_VIEW_MOTION == selected_view) &&
+            ((1U == frame_index) ||
+             (100U == frame_index) ||
+             (200U == frame_index) ||
+             (299U == frame_index)))
+        {
+            tm_printf(
+                (UB *)"[Display][Motion] "
+                      "display_frame=%u latest_vector_frame=%u "
+                      "exact=%u view=%u\n",
+                frame_index,
+                g_motion_vector_last_frame_index,
+                motion_vectors_available,
+                (uint32_t) selected_view
+            );
+        }
+
+
+        /*
+         * CP2 exact-frame motion visualization.
+         *
+         * Red dot    : center of each 7x7 grayscale block.
+         * Yellow line: previous -> current motion vector.
+         *
+         * Gray coordinate -> RAW coordinate scale = 2.
+         */
+        if ((DISPLAY_DRIVER_OK == status) &&
+            (DISPLAY_DEBUG_VIEW_MOTION == selected_view) &&
+            (0U != motion_vectors_available))
+        {
+            for (uint32_t block_y = 1U;
+                block_y < (MOTION_GRID_ROWS - 1U);
+                block_y++)
+            {
+                for (uint32_t block_x = 0U;
+                     block_x < MOTION_GRID_COLS;
+                     block_x++)
+                {
+                    uint32_t const vector_index =
+                        block_y *
+                        MOTION_GRID_COLS +
+                        block_x;
+
+                    motion_vector_t const * const vector =
+                        &s_display_motion_vectors[vector_index];
+
+
+                    /*
+                     * Center of corresponding 14x14 RAW region.
+                     *
+                     * grayscale 7x7 block
+                     *       -> RAW 14x14 region.
+                     */
+                    int32_t const origin_x =
+                        (int32_t)
+                        (
+                            block_x *
+                            MOTION_BLOCK_WIDTH *
+                            2U +
+                            MOTION_BLOCK_WIDTH
+                        );
+
+                    int32_t const origin_y =
+                        (int32_t)
+                        (
+                            block_y *
+                            MOTION_BLOCK_HEIGHT *
+                            2U +
+                            MOTION_BLOCK_HEIGHT
+                        );
+
+
+                    /*
+                     * Motion vector is measured in 112x84 coordinates.
+                     * Convert it to 224x168 RAW coordinates.
+                     */
+                    int32_t const vector_dx =
+                        (int32_t) vector->dx *
+                        2;
+
+                    int32_t const vector_dy =
+                        (int32_t) vector->dy *
+                        2;
+
+
+                    (void)
+                    display_driver_overlay_vector_rgb565(
+                        VIDEO_SOURCE_WIDTH,
+                        VIDEO_SOURCE_HEIGHT,
+                        origin_x,
+                        origin_y,
+                        vector_dx,
+                        vector_dy,
+                        0xF800U,   /* red origin */
+                        0xFFE0U    /* yellow vector */
+                    );
+                }
             }
         }
 

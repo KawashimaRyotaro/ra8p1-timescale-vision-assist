@@ -387,6 +387,198 @@ display_driver_status_t display_driver_overlay_rect_rgb565(
 }
 
 
+static void display_driver_put_pixel_rgb565(
+    uint8_t * framebuffer,
+    int32_t x,
+    int32_t y,
+    uint16_t color)
+{
+    if ((x < 0) ||
+        (y < 0) ||
+        (x >= (int32_t) DEBUG_DISPLAY_WIDTH) ||
+        (y >= (int32_t) DEBUG_DISPLAY_HEIGHT))
+    {
+        return;
+    }
+
+    uint16_t * const row =
+        (uint16_t *)
+        (
+            framebuffer +
+            (uint32_t) y *
+            DISPLAY_BUFFER_STRIDE_BYTES_INPUT0
+        );
+
+    row[x] =
+        color;
+}
+
+
+display_driver_status_t display_driver_overlay_vector_rgb565(
+    uint32_t source_width,
+    uint32_t source_height,
+    int32_t source_x,
+    int32_t source_y,
+    int32_t source_dx,
+    int32_t source_dy,
+    uint16_t origin_color,
+    uint16_t line_color)
+{
+    if ((DEBUG_SOURCE_WIDTH != source_width) ||
+        (DEBUG_SOURCE_HEIGHT != source_height))
+    {
+        return DISPLAY_DRIVER_ERROR_ARGUMENT;
+    }
+
+
+    int32_t source_x1 =
+        source_x + source_dx;
+
+    int32_t source_y1 =
+        source_y + source_dy;
+
+
+    if (source_x1 < 0)
+    {
+        source_x1 = 0;
+    }
+
+    if (source_y1 < 0)
+    {
+        source_y1 = 0;
+    }
+
+    if (source_x1 >= (int32_t) source_width)
+    {
+        source_x1 =
+            (int32_t) source_width - 1;
+    }
+
+    if (source_y1 >= (int32_t) source_height)
+    {
+        source_y1 =
+            (int32_t) source_height - 1;
+    }
+
+
+    /*
+     * 224x168 source coordinate
+     *      -> 448x336 display coordinate.
+     */
+    int32_t x0 =
+        source_x * 2;
+
+    int32_t y0 =
+        source_y * 2;
+
+    int32_t const x1 =
+        source_x1 * 2;
+
+    int32_t const y1 =
+        source_y1 * 2;
+
+
+    uint8_t * const framebuffer =
+        display_driver_get_back_buffer();
+
+
+    /*
+     * Bresenham line.
+     */
+    int32_t const dx =
+        (x1 >= x0) ?
+        (x1 - x0) :
+        (x0 - x1);
+
+    int32_t const sx =
+        (x0 < x1) ? 1 : -1;
+
+    int32_t const abs_dy =
+        (y1 >= y0) ?
+        (y1 - y0) :
+        (y0 - y1);
+
+    int32_t const dy =
+        -abs_dy;
+
+    int32_t const sy =
+        (y0 < y1) ? 1 : -1;
+
+    int32_t error =
+        dx + dy;
+
+
+    while (1)
+    {
+        display_driver_put_pixel_rgb565(
+            framebuffer,
+            x0,
+            y0,
+            line_color
+        );
+
+        if ((x0 == x1) &&
+            (y0 == y1))
+        {
+            break;
+        }
+
+        int32_t const error2 =
+            error * 2;
+
+        if (error2 >= dy)
+        {
+            error +=
+                dy;
+
+            x0 +=
+                sx;
+        }
+
+        if (error2 <= dx)
+        {
+            error +=
+                dx;
+
+            y0 +=
+                sy;
+        }
+    }
+
+
+    /*
+     * Draw a 3x3 origin marker after the line,
+     * so the starting point remains clearly visible.
+     */
+    int32_t const origin_x =
+        source_x * 2;
+
+    int32_t const origin_y =
+        source_y * 2;
+
+
+    for (int32_t py = -1;
+         py <= 1;
+         py++)
+    {
+        for (int32_t px = -1;
+             px <= 1;
+             px++)
+        {
+            display_driver_put_pixel_rgb565(
+                framebuffer,
+                origin_x + px,
+                origin_y + py,
+                origin_color
+            );
+        }
+    }
+
+
+    return DISPLAY_DRIVER_OK;
+}
+
+
 display_driver_status_t display_driver_present_composed(void)
 {
     fsp_err_t err =
